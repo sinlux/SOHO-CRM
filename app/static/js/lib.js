@@ -91,3 +91,20 @@ export async function updateBadge() {
 export function field(label, id, val, attrs = '') {
   return `<div class="field"><label for="${id}">${esc(label)}</label><input id="${id}" value="${esc(val || '')}" ${attrs}></div>`;
 }
+
+// ---- 金额：用整数运算精确到分（四舍五入，和后端 Decimal ROUND_HALF_UP 一致），避免 JS 浮点出现差一分 ----
+function dec(v) {
+  const s = String(v ?? '').trim();
+  const m = /^(-?)(\d*)\.?(\d*)$/.exec(s);
+  if (!m || (m[2] === '' && m[3] === '')) return {n: 0n, scale: 0};
+  return {n: BigInt(m[1] + (m[2] || '0') + m[3]), scale: m[3].length};
+}
+export function mulCents(qty, price) {
+  const a = dec(qty), b = dec(price);
+  const n = a.n * b.n, scale = a.scale + b.scale, neg = n < 0n, abs = neg ? -n : n;
+  let cents;
+  if (scale <= 2) cents = abs * 10n ** BigInt(2 - scale);
+  else { const d = 10n ** BigInt(scale - 2); cents = abs / d + (abs % d * 2n >= d ? 1n : 0n); }
+  return Number(neg ? -cents : cents);
+}
+export const fmtCents = c => (c / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});

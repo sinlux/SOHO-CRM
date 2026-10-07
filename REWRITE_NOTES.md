@@ -6,7 +6,7 @@
 - [x] 第一批：数据层 + 客户模块
 - [x] 界面改版：左侧栏 + 吉卜力配色 + 苹果式圆角毛玻璃，字体霞鹜文楷（OFL，内置于 app/static/fonts）
 - [x] 第二批：产品库 + 价格历史（含供应商比价、合并同类项、SKU 自动编号、汇率）
-- [ ] 第三批：报价单 + PDF/Excel 输出
+- [x] 第三批：报价单 + PDF/Excel/WhatsApp 输出
 - [ ] 第四批：Excel 产品导入 + PI 导入
 - [ ] 第五批：看板、设置（汇率/抬头/WA模板）、升级机制、旧 QuoteMaster 迁移
 
@@ -17,8 +17,9 @@ app/sinlux/core/         db(外键开启+事务) schema migrations http(路由/�
 app/sinlux/customers/    service intake xlsx_io enrich routes
 app/sinlux/products/     seeds catalog(类目/SKU) rates(中行汇率+定时) pricing(建议价/价格历史) media(相册/文档) service(产品/供应商/合并/复制) routes
 app/sinlux/core/imaging.py  产品图自动规范化（Pillow）
+app/sinlux/quotes/       service(创建/编辑/状态联动) exporter(PDF/Excel/WhatsApp) settings(抬头+模板) routes
 app/static/              index.html + css + js/(lib, main, pages/*)  —— 原单文件 HTML 已拆分
-tests/                   unittest（184项）+ browser_e2e.py（Playwright 无头浏览器）
+tests/                   unittest（215项）+ browser_e2e.py（Playwright 无头浏览器）
 ```
 运行测试：`python -m unittest discover -s tests`；浏览器测试：`python tests/browser_e2e.py`（需 `pip install playwright` + chromium，仅开发用）。
 
@@ -64,3 +65,18 @@ tests/                   unittest（184项）+ browser_e2e.py（Playwright 无�
 - 纯色背景去除不能全图替换颜色，只处理"从四角连通进来"的背景，否则产品内部同色镂空会被误刷。连通域在 ≤500px 的缩略图上做，保证 1200 万像素图也很快。
 - 15/16 位灰度 PNG 读出来是 I;16，需要 /256 缩到 8 位；测试数据本身也要真的是 16 位。
 - 页签状态是模块变量，换产品要重置，否则"新建产品"可能停在上一次的隐藏页签里。
+
+## 第三批（报价单）相对 v4.4 的行为变化
+1. 草稿不推进客户阶段（发出/成交才变「已报价」）；沉睡客户收到报价也回到「已报价」（旧版意图如此，但旧代码因中英文混写没生效）。
+2. 成交只写一次售价历史：旧版每点一次「成交」就重复写一遍并把客户推成「复购」。新版客户阶段由数据推出：该客户已有其它成交报价 → 复购，否则成交；同一张反复切换不会升级。
+3. 取消成交（改回其它状态）或删除已成交的报价单，会撤销它写入的成交价；删除已成交的需二次确认。成交价的生效日期是成交当天（旧版用报价创建日）。
+4. 新增：编辑（成交的除外）、复制为草稿、按明细 SKU/名称搜索、过期提示（超有效期仍为「已发送」时显示「已过有效期」，不自动改状态）。
+5. 金额：逐行 ROUND_HALF_UP 到分，合计 = 各行金额之和；Excel 用 =ROUND(数量*单价,2) 和 =SUM；前端用整数运算避免 JS 浮点差一分。
+6. WhatsApp 模板只替换已知变量（不再用 str.format，旧版用户模板里多一个花括号会整体报错，且 {0.__class__} 之类能读对象内部信息）。默认模板落款改为 {sender}（设置里的公司名）。
+7. PDF：用户文本转义（旧版里含 & < > 会让 reportlab 报错/被当标记）；超长规格截断；单行过高时可跨页；页脚「Page x / y」；产品图用 480px 缩略图。找不到中文字体时用 reportlab 自带 CID 宋体，不再出现方块。
+8. 报价币种仅 USD/EUR/CNY；产品建议价是美元：USD 报价自动带入，CNY 按当前汇率换算，EUR 不自动填（避免错价，提示手填）。
+## 记忆（第三批踩坑）
+- reportlab 的 Table 单行高于一页会抛 LayoutError：需 splitInRow=1 + 截断超长文本。
+- 前端金额必须用整数/BigInt 运算，7×1.005 在 JS 浮点下四舍五入会和 Decimal 差一分。
+- 「撤销成交价」按 source=报价单号 + customer_id 精确匹配，避免误删手动录入或 PI 导入的售价；SQLite 里 NULL 比较要用 `IS ?`。
+- 报价单号按数值取最大序号（字符串排序下 -1000 会排在 -999 前面）。

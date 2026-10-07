@@ -49,8 +49,8 @@ export async function render(root, arg, isCurrent) {
     ${c.ai_summary ? `<div class="field" style="margin-top:10px"><label>AI背调摘要</label><div class="summary">${esc(c.ai_summary)}</div></div>` : ''}
   </div>
 
-  <div class="card"><h3 style="margin-top:0">📄 报价历史</h3>
-    ${d.quotes.length ? d.quotes.map(q => `<div class="flex" style="padding:3px 0"><b>${esc(q.quote_no)}</b>
+  <div class="card"><div class="sec-title"><h3>📄 报价历史</h3><button class="primary small" id="btnNewQuote">＋ 新建报价</button></div>
+    ${d.quotes.length ? d.quotes.map(q => `<div class="flex" style="padding:3px 0"><a class="ext" href="#quote/${q.id}"><b>${esc(q.quote_no)}</b></a>
       <span>${esc((q.created_at || '').slice(0, 10))}</span><span>${q.item_count}项</span>
       <b>${esc(q.currency)} ${Number(q.total || 0).toFixed(2)}</b><span class="tag">${esc(q.status_label)}</span></div>`).join('')
       : '<span class="muted">暂无报价记录</span>'}</div>
@@ -75,6 +75,7 @@ export async function render(root, arg, isCurrent) {
     </div>`).join('') : '<span class="muted">还没做过背调</span>'}</div>`;
 
   $('#btnBack').onclick = () => nav('list');
+  $('#btnNewQuote').onclick = () => nav('quotenew', id);
   $('#btnEnrich').onclick = () => startEnrich(id);
   $('#btnSave').onclick = async () => {
     const upd = {};

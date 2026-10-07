@@ -13,6 +13,9 @@ from .products.pricing import PriceHistory
 from .products.media import MediaStore
 from .products.rates import RateService, RateScheduler
 from .products.service import ProductService, SupplierService
+from .quotes.exporter import QuoteExporter
+from .quotes.service import QuoteService
+from .quotes.settings import QuoteSettings
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
@@ -55,6 +58,9 @@ class Context:
         self.products = ProductService(self.db, self.rates, self.history, self.catalog, self.media)
         self.suppliers = SupplierService(self.db, self.uploads_dir, self.products, self.history)
         self.customers = CustomerService(self.db, self.images_dir)
+        self.quotes = QuoteService(self.db, self.customers, self.history)
+        self.quote_settings = QuoteSettings(self.db)
+        self.quote_export = QuoteExporter(self.db, self.quote_settings, self.exports_dir, self.uploads_dir)
         self.importer = CustomerImporter(self.db, self.customers, os.path.join(self.import_tmp, 'customers'))
         self.importer.cleanup_old()
         self.enricher = Enricher(self.db, self.customers, net)
@@ -73,11 +79,13 @@ class Context:
 def build_router():
     from .customers import routes as customer_routes
     from .products import routes as product_routes
+    from .quotes import routes as quote_routes
     from .core import routes as core_routes
     r = Router()
     core_routes.register(r)
     customer_routes.register(r)
     product_routes.register(r)
+    quote_routes.register(r)
     return r
 
 

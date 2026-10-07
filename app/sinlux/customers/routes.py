@@ -147,7 +147,7 @@ def register(r):
     @r.get('/exports/{name}')
     def download_export(ctx, req):
         name = os.path.basename(req.params['name'])
-        if not name.endswith('.xlsx'):
+        if not name.endswith(('.xlsx', '.pdf')):
             raise ApiError('文件不存在', 404)
         return FileResponse(os.path.join(ctx.exports_dir, name), name)
 

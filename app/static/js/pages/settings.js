@@ -1,7 +1,7 @@
 import {$, esc, api, toast} from '../lib.js';
 
 export async function render(root, _arg, isCurrent) {
-  const [s, v, b] = await Promise.all([api('/api/settings'), api('/api/version'), api('/api/backups')]);
+  const [s, v, b, qs] = await Promise.all([api('/api/settings'), api('/api/version'), api('/api/backups'), api('/api/settings/quote')]);
   if (!isCurrent()) return;
   const keyField = (id, label, k) => `<div class="field" style="max-width:560px;margin-top:10px"><label for="${id}">${label}
     ${s[k + '_set'] ? `<span class="tag good">已设置 ${esc(s[k + '_hint'])}</span>` : '<span class="tag warn">未设置</span>'}</label>
@@ -13,6 +13,17 @@ export async function render(root, _arg, isCurrent) {
     ${keyField('sTv', 'Tavily API Key（tavily.com 注册，每月1000次免费搜索）', 'tavily_key')}
     <div class="flex" style="margin-top:14px"><button class="primary" id="btnSave">保存</button>
       <button id="btnTest">测试连通性</button></div><div id="testOut" style="margin-top:10px"></div></div>
+
+    <div class="card"><h2>报价单抬头与 WhatsApp 模板</h2>
+      <p class="muted" style="margin-bottom:10px">抬头印在报价单 PDF / Excel 的顶部和页脚。</p>
+      <div class="grid"><div class="field"><label for="qName">公司名称</label><input id="qName" value="${esc(qs.company_name)}" placeholder="SINLUX"></div>
+        <div class="field"><label for="qEmail">邮箱</label><input id="qEmail" value="${esc(qs.company_email)}"></div>
+        <div class="field"><label for="qPhone">电话</label><input id="qPhone" value="${esc(qs.company_phone)}"></div>
+        <div class="field"><label for="qAddr">地址</label><input id="qAddr" value="${esc(qs.company_address)}"></div></div>
+      <div class="field" style="margin-top:12px"><label for="qWa">WhatsApp 报价文案模板（留空 = 使用默认模板）</label>
+        <textarea id="qWa" style="min-height:200px;font-family:Consolas,monospace" placeholder="${esc(qs.whatsapp_template_effective)}">${esc(qs.whatsapp_template)}</textarea></div>
+      <p class="muted" style="margin-top:6px">可用变量：${qs.variables.map(x => `<code>{${x}}</code>`).join(' ')}。不认识的 <code>{xxx}</code> 会原样保留。</p>
+      <div class="flex" style="margin-top:10px"><button class="primary" id="btnSaveQuote">保存抬头与模板</button><button id="btnResetWa">恢复默认模板</button></div></div>
 
     <div class="card"><h2>数据备份</h2>
       <p class="muted" style="margin-bottom:8px">一键生成包含数据库和图片的 zip，保存在 data/backups 文件夹。</p>
@@ -26,6 +37,15 @@ export async function render(root, _arg, isCurrent) {
     const body = {deepseek_model: $('#sModel').value, deepseek_key: $('#sDs').value, tavily_key: $('#sTv').value};
     try { await api('/api/settings', 'PUT', body); toast('已保存'); render(root, _arg, isCurrent); } catch (e) { toast(e.message); }
   };
+  const saveQuote = async extra => {
+    try {
+      await api('/api/settings/quote', 'PUT', {company_name: $('#qName').value, company_email: $('#qEmail').value, company_phone: $('#qPhone').value,
+        company_address: $('#qAddr').value, whatsapp_template: $('#qWa').value, ...extra});
+      toast('已保存'); render(root, _arg, isCurrent);
+    } catch (e) { toast(e.message); }
+  };
+  $('#btnSaveQuote').onclick = () => saveQuote({});
+  $('#btnResetWa').onclick = () => saveQuote({whatsapp_template: ''});
   $('#btnTest').onclick = async () => {
     $('#testOut').textContent = '测试中…（需要先保存 Key）';
     try {

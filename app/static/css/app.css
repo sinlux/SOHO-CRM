@@ -203,3 +203,21 @@ td.chk,th.chk{width:36px;padding-right:0}
 .psku{font-weight:700;font-size:13.5px}.pname{color:var(--ink-2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pmeta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:12.5px}
 .pcheck{position:absolute;top:8px;left:8px;z-index:2;background:rgba(255,255,255,.85);border-radius:8px;padding:3px 5px;line-height:0}
+
+/* ---------- 报价单 ---------- */
+.big-total{font-size:19px;color:var(--leaf-d)}
+.qrow{display:grid;grid-template-columns:60px minmax(260px,1fr) 78px 64px 100px 96px 70px;gap:10px;align-items:start;padding:12px 0;border-bottom:1px dashed var(--line)}
+.qrow:last-child{border-bottom:0}
+.qrow label{display:block;font-size:11.5px;color:var(--ink-3);margin-bottom:2px}
+.qrow textarea{min-height:48px;margin-top:6px;font-size:12.5px}
+.grid3{display:grid;grid-template-columns:150px 1fr;gap:8px}
+.qamt b{display:block;padding-top:8px;text-align:right}
+.qtools{display:flex;gap:4px;padding-top:6px;justify-content:flex-end}
+.hint{font-size:12px;color:var(--ink-2);margin-top:4px;line-height:1.7}
+.sug{position:absolute;left:0;right:0;z-index:30;background:var(--card);border-radius:var(--r-md);box-shadow:0 12px 36px rgba(67,57,46,.2);margin-top:4px;max-height:360px;overflow:auto}
+#custSug{background:var(--card);border-radius:var(--r-md);margin-top:4px}
+.sugitem{display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer;border-radius:var(--r-sm)}
+.sugitem:hover{background:var(--leaf-soft)}
+.chosen{display:inline-flex;align-items:center;gap:8px;background:var(--leaf-soft);padding:5px 12px;border-radius:999px}
+code{background:var(--card-2);border:1px solid var(--line-2);border-radius:6px;padding:0 5px;font-size:12px}
+@media (max-width:1000px){.qrow{grid-template-columns:60px 1fr 1fr}.qrow .qmain{grid-column:2/4}}

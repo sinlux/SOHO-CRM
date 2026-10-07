@@ -7,9 +7,12 @@ import * as imp from './pages/import.js';
 import * as settings from './pages/settings.js';
 import * as products from './pages/products.js';
 import * as product from './pages/product.js';
+import * as quotes from './pages/quotes.js';
+import * as quote from './pages/quote.js';
+import * as quoteForm from './pages/quote_form.js';
 
-const PAGES = {list, add, customer, reminders, import: imp, settings, products, product};
-const TITLES = {list: '客户列表', add: '录入客户', customer: '客户详情', reminders: '跟进提醒', import: 'Excel 导入', settings: '设置', products: '产品库', product: '产品详情'};
+const PAGES = {list, add, customer, reminders, import: imp, settings, products, product, quotes, quote, quotenew: quoteForm, quoteedit: quoteForm};
+const TITLES = {list: '客户列表', add: '录入客户', customer: '客户详情', reminders: '跟进提醒', import: 'Excel 导入', settings: '设置', products: '产品库', product: '产品详情', quotes: '报价单', quote: '报价单详情', quotenew: '新建报价单', quoteedit: '编辑报价单'};
 let seq = 0;
 
 async function route() {
@@ -17,7 +20,8 @@ async function route() {
   const [view, arg] = h.split('/');
   const page = PAGES[view] || list;
   $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === (PAGES[view] ? view : 'list')
-    || (view === 'customer' && a.dataset.v === 'list') || (view === 'product' && a.dataset.v === 'products')));
+    || (view === 'customer' && a.dataset.v === 'list') || (view === 'product' && a.dataset.v === 'products')
+    || (['quote', 'quotenew', 'quoteedit'].includes(view) && a.dataset.v === 'quotes')));
   $('#pageTitle').textContent = TITLES[PAGES[view] ? view : 'list'];
   const mine = ++seq;                    // 页面异步加载期间用户又点了别处，则丢弃旧结果
   const root = $('#app');
