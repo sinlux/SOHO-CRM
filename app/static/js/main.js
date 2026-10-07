@@ -27,16 +27,20 @@ async function route() {
   } catch (e) {
     if (mine === seq) root.innerHTML = `<div class="card err">页面加载失败：${esc(e.message)}</div>`;
   }
+  syncSearchHint();
   updateBadge();
 }
 
-// 顶栏全局搜索：回车 -> 带着关键词进入客户列表
+// 顶栏全局搜索：在产品相关页面搜产品，其它页面搜客户；回车后带着关键词进入对应列表
+const isProductView = () => ['products', 'product'].includes(location.hash.slice(1).split('/')[0]);
+const syncSearchHint = () => { $('#gSearch').placeholder = isProductView() ? '搜索产品：SKU / 名称 / 品牌 / 系列，回车查看' : '搜索客户：公司 / 联系人 / 邮箱 / 备注，回车查看'; };
 $('#gSearch').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
-  list.setSearch(e.target.value.trim());
+  const q = e.target.value.trim(), prod = isProductView(), target = prod ? 'products' : 'list';
+  (prod ? products : list).setSearch(q);
   e.target.value = '';
-  if (location.hash.slice(1).split('/')[0] === 'list' || location.hash === '') route();
-  else location.hash = '#list';
+  if (location.hash.slice(1).split('/')[0] === target) route();
+  else location.hash = '#' + target;
 });
 window.addEventListener('hashchange', route);
 route();

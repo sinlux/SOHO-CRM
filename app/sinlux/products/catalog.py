@@ -8,13 +8,27 @@ import re
 from ..core.util import ApiError
 from . import seeds
 
-# 内置类目 → 默认总前缀 / 灯饰默认子类前缀（沿用旧版，不新增臆测的前缀）
-BUILTIN_CATEGORY_PREFIXES = {'lighting': 'SL', 'furniture': 'GL', 'other': 'OT'}
-DEFAULT_LIGHTING_SUB_PREFIXES = [
-    ('射灯', 'SP'), ('筒灯', 'DL'), ('球泡', 'BU'), ('线条灯', 'LL'), ('吸顶灯', 'CL'), ('吊灯', 'PD'),
-    ('壁灯', 'WL'), ('落地灯', 'FL'), ('台灯', 'TL'), ('轨道灯', 'TR'), ('面板灯', 'PL'), ('泛光灯', 'FD'),
-    ('投光灯', 'PF'), ('草坪灯', 'LW'), ('庭院灯', 'GD'),
-]
+# SKU 格式（沿用旧版并铺满新业务）：<类目前缀><子类前缀><6位序号>，如 SL + SP + 000001 = SLSP000001。
+# 内置类目 → 默认总前缀。首饰旧版没有预置，仍不预置（需要时在「SKU前缀」里设置）。
+BUILTIN_CATEGORY_PREFIXES = {'lighting': 'SL', 'furniture': 'GL', 'decor': 'DC', 'other': 'OT'}
+# 各类目默认子类前缀（子类名必须与规格字段「子类」的选项一致，否则选不到）。类目内前缀不得重复。
+DEFAULT_SUB_PREFIXES = {
+    'lighting': [  # LED 灯饰
+        ('射灯', 'SP'), ('筒灯', 'DL'), ('球泡', 'BU'), ('线条灯', 'LL'), ('吸顶灯', 'CL'), ('吊灯', 'PD'),
+        ('壁灯', 'WL'), ('落地灯', 'FL'), ('台灯', 'TL'), ('轨道灯', 'TR'), ('面板灯', 'PL'), ('泛光灯', 'FD'),
+        ('投光灯', 'PF'), ('草坪灯', 'LW'), ('庭院灯', 'GD'), ('灯带', 'LS'), ('工矿灯', 'HB'), ('路灯', 'ST'),
+        ('装饰灯', 'DE'), ('其他', 'OT')],
+    'furniture': [  # 家具（含酒店 FF&E 常见品类）
+        ('卫浴柜', 'BV'), ('办公椅', 'OC'), ('办公桌', 'OD'), ('沙发', 'SF'), ('床架', 'BD'), ('餐桌', 'DT'),
+        ('餐椅', 'DC'), ('柜子', 'CB'), ('茶几', 'CT'), ('床头柜', 'NS'), ('书架', 'BS'), ('鞋柜', 'SR'),
+        ('床垫', 'MT'), ('床头板', 'HB'), ('衣柜', 'WD'), ('电视柜', 'TV'), ('行李架', 'LR'), ('梳妆台', 'DR'),
+        ('扶手椅', 'AC'), ('边几', 'SD'), ('吧椅', 'BC'), ('凳子', 'ST'), ('户外家具', 'OF'), ('躺椅', 'LG'),
+        ('其他', 'OT')],
+    'decor': [  # 装饰材料
+        ('毯子', 'BL'), ('枕头', 'PW'), ('窗帘', 'CU'), ('地毯', 'RG'), ('玻璃', 'GS'), ('镜子', 'MR'),
+        ('花瓶', 'VS'), ('摆件', 'OR'), ('挂画', 'AT'), ('布草', 'LN'), ('墙纸', 'WP'), ('餐具', 'TW'),
+        ('香薰蜡烛', 'CD'), ('花艺', 'FR'), ('其他', 'OT')],
+}
 PREFIX_RE = re.compile(r'^[A-Z]{1,4}$')
 
 
@@ -31,7 +45,15 @@ def ensure_seeds(db):
                                     (cat['code'], cat['name'], cat['icon'], cat['sort_order'])).lastrowid
                 added += 1
             for i, f in enumerate(seeds.DEFAULT_FIELDS_MAP.get(cat['code'], [])):
-                if db.one('SELECT id FROM category_fields WHERE category_id=? AND field_key=?', (cat_id, f['key'])):
+                ex = db.one('SELECT id, options FROM category_fields WHERE category_id=? AND field_key=?', (cat_id, f['key']))
+                if ex:
+                    # 已有字段：只把种子里新增的选项并进去（不删、不重排用户已有的选项）
+                    if f.get('options') and f['type'] in ('select', 'multi'):
+                        have = [o for o in (ex['options'] or '').split('|') if o]
+                        new = [o for o in f['options'].split('|') if o and o not in have]
+                        if new:
+                            db.execute('UPDATE category_fields SET options=? WHERE id=?', ('|'.join(have + new), ex['id']))
+                            added += len(new)
                     continue
                 db.execute("""INSERT INTO category_fields
                     (category_id,field_key,field_label,field_type,is_required,options,unit,placeholder,sort_order)
@@ -43,13 +65,15 @@ def ensure_seeds(db):
             if pre and not db.one('SELECT 1 FROM category_sku_prefixes WHERE category_id=?', (cat_id,)):
                 db.execute('INSERT INTO category_sku_prefixes(category_id,prefix) VALUES(?,?)', (cat_id, pre))
                 added += 1
-            if cat['code'] == 'lighting':
-                for sub, pf in DEFAULT_LIGHTING_SUB_PREFIXES:
-                    if not db.one('SELECT 1 FROM subcategory_prefixes WHERE category_id=? AND subcategory_value=?',
-                                  (cat_id, sub)):
-                        db.execute('INSERT INTO subcategory_prefixes(category_id,subcategory_value,prefix) VALUES(?,?,?)',
-                                   (cat_id, sub, pf))
-                        added += 1
+            for sub, pf in DEFAULT_SUB_PREFIXES.get(cat['code'], []):
+                if db.one('SELECT 1 FROM subcategory_prefixes WHERE category_id=? AND subcategory_value=?', (cat_id, sub)):
+                    continue
+                # 用户在该类目里已把这个前缀给了别的子类，就不再补默认的，避免两个子类共用一个编号段
+                if db.one('SELECT 1 FROM subcategory_prefixes WHERE category_id=? AND prefix=?', (cat_id, pf)):
+                    continue
+                db.execute('INSERT INTO subcategory_prefixes(category_id,subcategory_value,prefix) VALUES(?,?,?)',
+                           (cat_id, sub, pf))
+                added += 1
     return added
 
 
@@ -95,10 +119,25 @@ class CatalogService:
     def set_category_prefix(self, category_id, prefix):
         self.require_category(category_id)
         prefix = _prefix(prefix)
+        for r in self.db.query('SELECT sp.prefix AS sp, sp.subcategory_value AS sv FROM subcategory_prefixes sp WHERE sp.category_id=?', (category_id,)):
+            self._check_no_collision(category_id, prefix, r['sp'], r['sv'])
         self.db.execute('INSERT INTO category_sku_prefixes(category_id,prefix) VALUES(?,?) '
                         "ON CONFLICT(category_id) DO UPDATE SET prefix=excluded.prefix, updated_at=datetime('now')",
                         (category_id, prefix))
         return prefix
+
+    def _check_no_collision(self, category_id, cat_prefix, sub_prefix, sub_value=None):
+        """同类目内子类前缀不能重复；跨类目"类目前缀+子类前缀"拼出的完整前缀也不能相同，否则两个品类会抢同一段编号。"""
+        full = cat_prefix + sub_prefix
+        dup = self.db.one('SELECT subcategory_value FROM subcategory_prefixes WHERE category_id=? AND prefix=? '
+                          'AND subcategory_value<>?', (category_id, sub_prefix, sub_value or ''))
+        if dup:
+            raise ApiError('子类前缀「%s」已被本类目的「%s」使用' % (sub_prefix, dup['subcategory_value']))
+        for r in self.db.query("""SELECT c.name, cp.prefix AS cp, sp.prefix AS sp, sp.subcategory_value AS sv
+            FROM subcategory_prefixes sp JOIN category_sku_prefixes cp ON cp.category_id=sp.category_id
+            JOIN categories c ON c.id=sp.category_id WHERE sp.category_id<>?""", (category_id,)):
+            if r['cp'] + r['sp'] == full:
+                raise ApiError('完整前缀「%s」已被类目「%s」的「%s」使用' % (full, r['name'], r['sv']))
 
     def upsert_sub_prefix(self, category_id, value, prefix):
         self.require_category(category_id)
@@ -106,6 +145,9 @@ class CatalogService:
         if not value:
             raise ApiError('子类名称不能为空')
         prefix = _prefix(prefix)
+        cp = (self.db.one('SELECT prefix FROM category_sku_prefixes WHERE category_id=?', (category_id,)) or {}).get('prefix')
+        if cp:
+            self._check_no_collision(category_id, cp, prefix, value)
         self.db.execute('INSERT INTO subcategory_prefixes(category_id,subcategory_value,prefix) VALUES(?,?,?) '
                         "ON CONFLICT(category_id,subcategory_value) DO UPDATE SET prefix=excluded.prefix, updated_at=datetime('now')",
                         (category_id, value, prefix))

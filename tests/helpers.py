@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, 'app', 'libs'))
+sys.path.append(os.path.join(ROOT, 'app', 'libs'))   # 内置库放最后：优先用系统已装的 Pillow/openpyxl
 sys.path.insert(0, os.path.join(ROOT, 'app'))
 
 from sinlux.app import create_app  # noqa: E402
@@ -84,12 +84,12 @@ class AppTestCase(unittest.TestCase):
         if cls.legacy:
             cls.legacy_summary = cls.legacy(cls.data_dir)
         cls.net = FakeNet()
-        cls.rate_result = 0.14           # 测试里在线汇率的"返回值"；设成异常实例则模拟网络失败
+        cls.rate_result = 714.0          # 测试里"中国银行美元现汇买入价"（人民币/100美元）；设成异常实例则模拟网络/页面失败
 
         def fake_rate():
             if isinstance(cls.rate_result, Exception):
                 raise cls.rate_result
-            return cls.rate_result
+            return {'buy_spot': cls.rate_result, 'published': '2026-10-07 10:30:00'}
         cls.ctx, cls.server = create_app(cls.data_dir, port=0, net=cls.net, rate_fetcher=fake_rate)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()

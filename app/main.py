@@ -7,7 +7,11 @@ import time
 import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, 'libs'))   # 内置 openpyxl 等
+# 内置 openpyxl / Pillow 等。Windows 上优先用内置的；其它系统（开发/测试）优先用系统已装的，内置的放最后
+if sys.platform == 'win32':
+    sys.path.insert(0, os.path.join(HERE, 'libs'))
+else:
+    sys.path.append(os.path.join(HERE, 'libs'))
 sys.path.insert(0, HERE)
 
 from sinlux.app import create_app  # noqa: E402
@@ -16,7 +20,7 @@ PORT = int(os.environ.get('SINLUX_PORT', '8123'))
 
 
 def main():
-    ctx, server = create_app(port=PORT)
+    ctx, server = create_app(port=PORT, start_scheduler=True)
     rep = ctx.migration_report
     if rep['actions']:
         print('数据库已自动升级:')

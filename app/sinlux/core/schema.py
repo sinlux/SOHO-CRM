@@ -7,6 +7,14 @@
 产品、报价相关的表本批只负责"建出来"，业务逻辑在后续批次实现。
 """
 
+# 第二批之后给 products 追加的列（旧库迁移时按此补）。(列名, 类型定义)
+PRODUCT_NEW_COLUMNS = [
+    ('status', "TEXT DEFAULT 'active'"), ('unit', "TEXT DEFAULT 'pcs'"), ('brand', "TEXT DEFAULT ''"),
+    ('series', "TEXT DEFAULT ''"), ('hs_code', "TEXT DEFAULT ''"), ('origin', "TEXT DEFAULT ''"),
+    ('pcs_per_carton', 'INTEGER'), ('carton_l', 'REAL'), ('carton_w', 'REAL'), ('carton_h', 'REAL'),
+    ('gross_weight', 'REAL'), ('net_weight', 'REAL'),
+]
+
 STAGES = ['潜在', '已联系', '已报价', '已寄样', '成交', '复购', '沉睡']
 
 # 旧版里 pi_import / quote_service 曾把英文 key 写进 stage 列，迁移时统一成中文
@@ -99,6 +107,15 @@ CREATE TABLE IF NOT EXISTS products(
   profit_rate REAL DEFAULT 0.25, suggested_price REAL,
   moq INTEGER, lead_time INTEGER, supplier TEXT, remark TEXT,
   spec_text TEXT DEFAULT '',
+  status TEXT DEFAULT 'active',
+  unit TEXT DEFAULT 'pcs',
+  brand TEXT DEFAULT '',
+  series TEXT DEFAULT '',
+  hs_code TEXT DEFAULT '',
+  origin TEXT DEFAULT '',
+  pcs_per_carton INTEGER,
+  carton_l REAL, carton_w REAL, carton_h REAL,
+  gross_weight REAL, net_weight REAL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (category_id) REFERENCES categories(id));
@@ -175,6 +192,33 @@ CREATE TABLE IF NOT EXISTS subcategory_prefixes(
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(category_id, subcategory_value),
   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS product_images(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER,                      -- NULL = 刚上传、尚未保存到任何产品的暂存图
+  file TEXT NOT NULL,
+  thumb TEXT DEFAULT '',
+  width INTEGER, height INTEGER,
+  normalized INTEGER DEFAULT 0,
+  low_res INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS product_files(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT DEFAULT '其他',
+  file TEXT NOT NULL,
+  size INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS rate_history(
+  day TEXT PRIMARY KEY,
+  buy_spot REAL NOT NULL,
+  rate REAL NOT NULL,
+  published_at TEXT,
+  fetched_at TEXT,
+  source TEXT DEFAULT 'boc');
 CREATE TABLE IF NOT EXISTS app_settings(
   key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 """
@@ -188,6 +232,8 @@ CREATE INDEX IF NOT EXISTS idx_enrichments_customer ON enrichments(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_lv ON customers(lv);
 CREATE INDEX IF NOT EXISTS idx_quotes_customer ON quotes(customer_id);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_product_files_product ON product_files(product_id);
 CREATE INDEX IF NOT EXISTS idx_price_history_product ON price_history(product_id, price_type, effective_date);
 CREATE INDEX IF NOT EXISTS idx_quote_items_product ON quote_items(product_id);
 """

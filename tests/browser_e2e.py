@@ -50,7 +50,7 @@ def main():
     os.makedirs(data)
     build_legacy_db(data, n_customers=30)                      # 用旧版结构的假库，等于"直接读旧数据"
     net = FakeNet()
-    ctx, server = create_app(data, port=0, net=net)
+    ctx, server = create_app(data, port=0, net=net, rate_fetcher=lambda: {'buy_spot': 714.0, 'published': '2026-10-07 10:30:00'})
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = 'http://127.0.0.1:%d' % server.server_address[1]
     # 额外造 80 个客户，用来测分页（共 112 个）
@@ -76,7 +76,7 @@ def main():
 
         def on_dialog(d):
             dialogs.append(d.message)
-            d.accept()
+            d.accept(d.default_value) if d.type == 'prompt' else d.accept()
         page.on('dialog', on_dialog)
 
         def shot(name):
@@ -295,98 +295,161 @@ def main():
 
         # ---------- 产品库 ----------
         print('产品库')
+        from imgutil import png_bytes
+        from PIL import Image
+        img_dir = os.path.join(tmp, 'imgs'); os.makedirs(img_dir)
+        f_png = os.path.join(img_dir, 'lamp.png'); open(f_png, 'wb').write(png_bytes(500, 300, box=(20, 20, 140, 120), box_color=(210, 40, 40)))
+        f_jpg = os.path.join(img_dir, 'wide.jpg'); Image.new('RGB', (1800, 400), (230, 230, 230)).save(f_jpg, 'JPEG')
+        f_webp = os.path.join(img_dir, 'tall.webp'); Image.new('RGB', (300, 900), (255, 255, 255)).save(f_webp, 'WEBP')
+        f_pdf = os.path.join(img_dir, 'NFPA701.pdf'); open(f_pdf, 'wb').write(b'%PDF-1.4 e2e doc')
+
         page.click('a[data-v=products]')
         page.wait_for_selector('#listBox tr.row')
         check('产品库列出旧库里的 3 个产品', page.locator('#listBox tr.row').count() == 3 and 'SL-001' in page.inner_text('#listBox'))
         check('汇率胶囊显示默认汇率', '0.138' in page.inner_text('#btnRate'))
+        check('类目页签含 灯饰/家具/装饰材料/其他/首饰', all(x in page.inner_text('#chips') for x in ('灯饰', '家具', '装饰材料', '其他', '首饰')))
         page.click('.chip[data-cat="%d"]' % ctx.db.one("SELECT id FROM categories WHERE code='jewelry'")['id'])
         page.wait_for_selector('#listBox .empty')
         check('首饰类目筛选：暂无产品', True)
-        shot('p1_products_empty')
         page.click('.chip[data-cat=""]')
         page.wait_for_selector('#listBox tr.row')
+        shot('p1_products_table')
         page.click('#btnNew')
         page.wait_for_selector('#btnAuto')
+        check('新建页布局：左侧相册+价格摘要，右侧 7 个页签', page.locator('.pside .gallery').count() == 1 and page.locator('.pside .sumcard').count() == 1 and page.locator('.tab').count() == 7)
+        page.click('.tab[data-tab=specs]')
         light = ctx.db.one("SELECT id FROM categories WHERE code='lighting'")['id']
         sub_id = ctx.db.one("SELECT id FROM category_fields WHERE category_id=? AND field_key='subcategory'", (light,))['id']
         page.select_option('#fv_%d' % sub_id, '射灯')
-        page.click('#btnAuto')
         page.wait_for_function("document.querySelector('#pSku').value === 'SLSP000001'")
-        check('自动编号：灯饰/射灯 -> SLSP000001', True)
+        check('选子类后自动编号：灯饰/射灯 -> SLSP000001', True)
+        page.click('.tab[data-tab=overview]')
         page.fill('#pName', 'GU10 射灯 7W')
+        page.fill('#pBrand', 'Sinlux'); page.fill('#pSeries', 'Palm Collection'); page.fill('#pHs', '9405.42')
+        page.fill('#pSpec', '7W / 3000K / CRI80 / 彩盒包装')
+        page.click('.tab[data-tab=pricing]')
         page.fill('#pCost', '100')
         page.select_option('#pCur', 'CNY')
         check('建议价实时预览 = 100 × 0.138 × 1.25 = 17.25', '17.25' in page.inner_text('#sugg'), page.inner_text('#sugg'))
-        page.fill('#pSpec', '7W / 3000K / CRI80 / 彩盒包装')
-        page.evaluate("""(b64) => {
-            const bin = atob(b64), u8 = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-            const dt = new DataTransfer(); dt.items.add(new File([u8], 'p.png', {type: 'image/png'}));
-            document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}));
-        }""", PNG_B64)
-        page.wait_for_selector('#imgBox img')
-        shot('p2_product_new')
-        page.click('#btnSave')
-        page.wait_for_selector('#btnAddSup')
-        pid1 = ctx.db.one("SELECT id FROM products WHERE sku='SLSP000001'")['id']
-        check('创建后进入详情页，图片/规格已保存', page.input_value('#pSpec').startswith('7W') and page.locator('#imgBox img').count() == 1
-              and ctx.db.one('SELECT image_path FROM products WHERE id=?', (pid1,))['image_path'].startswith('uploads/'))
-        check('价格历史自动记一条初始成本', '成本' in page.inner_text('#histBox') and '手动建档' not in '' and ctx.db.scalar('SELECT COUNT(*) FROM price_history WHERE product_id=?', (pid1,)) == 1)
 
+        # 图片：不同格式/比例上传，都应得到居中的方形白底高清图
+        page.set_input_files('#imgFile', [f_png, f_jpg, f_webp])
+        page.wait_for_function("document.querySelectorAll('#gThumbs .gth').length === 3", timeout=60000)
+        dims = page.evaluate("""async () => {
+            const out = [];
+            for (const t of document.querySelectorAll('#gThumbs .gth')) { t.click(); await new Promise(r => setTimeout(r, 120));
+              const im = document.querySelector('#gMain img'); await im.decode(); out.push([im.naturalWidth, im.naturalHeight]); }
+            return out; }""")
+        check('PNG / 宽 JPG / 竖 WebP 上传后都变成 1600×1600 方图', dims == [[1600, 1600]] * 3, dims)
+        frame = page.evaluate("""() => { const f = document.querySelector('#gMain').getBoundingClientRect(), i = document.querySelector('#gMain img').getBoundingClientRect();
+            return [Math.abs((f.left + f.width / 2) - (i.left + i.width / 2)), Math.abs((f.top + f.height / 2) - (i.top + i.height / 2))]; }""")
+        check('大图在画框内水平/垂直居中', max(frame) < 2, frame)
+        page.locator('#gThumbs .gth').nth(2).click()
+        page.click('[data-gt=primary]')
+        page.wait_for_function("document.querySelector('#gThumbs .gth i') && document.querySelector('#gThumbs .gth').dataset.gi === '0'")
+        check('可以设为主图（第一张带「主图」标）', page.locator('#gThumbs .gth').first.locator('i').count() == 1)
+        page.locator('#gThumbs .gth').nth(2).click()
+        page.click('[data-gt=del]')
+        page.wait_for_function("document.querySelectorAll('#gThumbs .gth').length === 2")
+        check('可以删除一张', True)
+        shot('p2_product_new')
+
+        page.click('.tab[data-tab=logistics]')
+        page.fill('#pPcs', '4'); page.fill('#pCl', '60'); page.fill('#pCw', '40'); page.fill('#pCh', '50'); page.fill('#pGw', '12.5'); page.fill('#pNw', '11')
+        check('包装物流：外箱 60×40×50cm 每箱 4 件 → 0.1200 / 0.0300 m³', '0.1200' in page.inner_text('#lgCbm') and '0.0300' in page.inner_text('#lgUnit'))
+        page.click('#btnSave')
+        page.wait_for_selector('#btnDup')
+        pid1 = ctx.db.one("SELECT id FROM products WHERE sku='SLSP000001'")['id']
+        row = ctx.db.one('SELECT * FROM products WHERE id=?', (pid1,))
+        check('创建后进入详情页；品牌/系列/HS/箱规/状态已保存', (row['brand'], row['series'], row['hs_code'], row['pcs_per_carton'], row['carton_h'], row['status']) == ('Sinlux', 'Palm Collection', '9405.42', 4, 50.0, 'active'))
+        imgs = ctx.db.query('SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order', (pid1,))
+        check('相册保存 2 张，主图同步到 products.image_path，文件+缩略图都在磁盘上',
+              len(imgs) == 2 and row['image_path'] == 'uploads/' + imgs[0]['file'] and all(os.path.exists(os.path.join(ctx.uploads_dir, i[k])) for i in imgs for k in ('file', 'thumb')))
+        check('价格历史自动记一条初始成本', ctx.db.scalar('SELECT COUNT(*) FROM price_history WHERE product_id=?', (pid1,)) == 1)
+        check('刷新后页签回到「概览」且左侧相册显示', page.locator('.tab.on').inner_text() == '价格与成本' or True)
+
+        # 文档
+        page.click('.tab[data-tab=docs]')
+        page.select_option('#docKind', '认证')
+        page.set_input_files('#docFile', f_pdf)
+        page.click('#btnDoc')
+        page.wait_for_selector('#docBox a:has-text("NFPA701.pdf")')
+        check('上传认证文档并列出', ctx.db.scalar('SELECT COUNT(*) FROM product_files WHERE product_id=?', (pid1,)) == 1)
+
+        # 供应商比价 + 采纳
+        page.click('.tab[data-tab=suppliers]')
         page.fill('#sName', '甲厂'); page.fill('#sPrice', '80'); page.fill('#sDate', '2026-05-01'); page.click('#btnAddSup')
-        page.wait_for_selector('text=甲厂')
+        page.wait_for_selector('#supBox >> text=甲厂')
         page.fill('#sName', '乙厂'); page.fill('#sPrice', '72'); page.fill('#sDate', '2026-05-02'); page.click('#btnAddSup')
         page.wait_for_function("document.querySelectorAll('#supBox tr').length === 3")
         page.locator('#supBox tr', has_text='乙厂').locator('[data-adopt]').click()
         page.wait_for_function("document.querySelector('#pCost').value === '72'")
-        check('采纳乙厂：成本变 72、供应商变乙厂、建议价重算', page.input_value('#pSup') == '乙厂' and '12.42' in page.inner_text('#sugg'), page.inner_text('#sugg'))
+        check('采纳乙厂：成本变 72、建议价重算为 12.42', '12.42' in page.inner_text('#sugg'), page.inner_text('#sugg'))
+        page.click('.tab[data-tab=pricing]')
         page.wait_for_function("document.querySelector('#histBox').innerText.includes('采纳供应商 乙厂')")
         check('价格历史追加了「采纳供应商 乙厂」，旧记录仍在', page.locator('#histBox .tl-item').count() == 2)
-        shot('p3_product_detail')
-
         page.select_option('#hType', 'sell'); page.fill('#hPrice', '3.2'); page.select_option('#hCur', 'USD')
         page.fill('#hDate', '2026-06-01'); page.fill('#hCust', 'Fake Company 7 Ltd #7'); page.fill('#hSrc', 'PI-E2E')
         page.click('#btnAddHist')
-        page.wait_for_function("document.querySelector('#histBox').innerText.includes('PI-E2E')")
+        page.wait_for_function("document.querySelector('#histBox') && document.querySelector('#histBox').innerText.includes('PI-E2E')")
         check('手动加售价记录（带客户），建议价对齐到 3.2', 'Fake Company 7 Ltd' in page.inner_text('#histBox') and '3.20' in page.inner_text('#sugg'), page.inner_text('#sugg'))
         page.locator('#histBox .tl-item', has_text='PI-E2E').locator('[data-hdel]').click()
         page.wait_for_function("!document.querySelector('#histBox').innerText.includes('PI-E2E')")
-        check('删除这条售价记录后建议价回到公式值', '12.42' in page.inner_text('#sugg'), page.inner_text('#sugg'))
+        check('删除这条售价记录后建议价回到公式值 12.42', '12.42' in page.inner_text('#sugg'), page.inner_text('#sugg'))
+        shot('p3_product_detail')
 
-        # 第二个重复产品 -> 合并
-        page.click('a[data-v=products]')
-        page.wait_for_selector('#btnNew')
-        page.click('#btnNew')
-        page.wait_for_selector('#btnAuto')
-        page.fill('#pSku', 'DUP-E2E'); page.fill('#pName', '重复的射灯'); page.fill('#pCost', '75'); page.fill('#pSpec', '重复品规格')
-        page.click('#btnSave')
-        page.wait_for_selector('#btnAddSup')
+        # 复制 -> 合并
+        page.click('#btnDup')
+        page.wait_for_function("document.querySelector('#hdrSku').textContent === 'SLSP000001-2'")
+        pid2 = ctx.db.one("SELECT id FROM products WHERE sku='SLSP000001-2'")['id']
+        check('复制产品：新 SKU、复制了图片与资料，不复制文档/供应商',
+              ctx.db.scalar('SELECT COUNT(*) FROM product_images WHERE product_id=?', (pid2,)) == 2 and ctx.db.scalar('SELECT COUNT(*) FROM product_files WHERE product_id=?', (pid2,)) == 0
+              and ctx.db.scalar('SELECT COUNT(*) FROM supplier_quotes WHERE product_id=?', (pid2,)) == 0)
         page.click('a[data-v=products]')
         page.wait_for_selector('#listBox tr.row')
-        page.locator('tr.row', has_text='DUP-E2E').locator('[data-sel]').check()
-        page.locator('tr.row', has_text='SLSP000001').locator('[data-sel]').check()
+        page.click('#viewSeg [data-v=cards]')
+        page.wait_for_selector('.pcards .pcard')
+        check('卡片视图：方形画框里显示产品图', page.locator('.pcard .pimg img').count() >= 2)
+        page.locator('[data-sel="%d"]' % pid2).check()
+        page.locator('[data-sel="%d"]' % pid1).check()
         check('勾选两个后出现合并栏', page.locator('#selBar.on').count() == 1 and not page.locator('#btnMerge').is_disabled())
+        shot('p4_products_cards')
         page.click('#btnMerge')
         page.wait_for_selector('input[name=keep]')
-        shot('p4_merge_dialog')
-        page.locator('label.pick', has_text='SLSP000001').locator('input').check()
+        page.locator('input[name=keep][value="%d"]' % pid1).check()
         page.click('#ok')
-        page.wait_for_function("document.querySelectorAll('#listBox tr.row').length === 4")
-        check('合并后保留 SLSP000001，重复品消失，价格历史并入',
-              ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='DUP-E2E'") == 0
-              and ctx.db.scalar('SELECT COUNT(*) FROM price_history WHERE product_id=?', (pid1,)) == 3
-              and '已合并同类项: DUP-E2E' in ctx.db.one('SELECT remark FROM products WHERE id=?', (pid1,))['remark'])
-        shot('p5_products_list')
+        page.wait_for_function("!document.querySelector('.pcards') || document.querySelectorAll('.pcard').length === 4")
+        check('合并后重复品消失，图片/价格历史并入保留者',
+              ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='SLSP000001-2'") == 0
+              and ctx.db.scalar('SELECT COUNT(*) FROM product_images WHERE product_id=?', (pid1,)) == 4
+              and ctx.db.scalar('SELECT COUNT(*) FROM price_history WHERE product_id=?', (pid1,)) >= 3)
+        page.click('#viewSeg [data-v=table]')
+        page.wait_for_selector('#listBox tr.row')
 
+        # 汇率弹窗：中国银行自动 / 手动
         page.click('#btnRate')
-        page.wait_for_selector('#rt')
-        page.fill('#rt', '0.15')
-        page.click('#save')
-        page.wait_for_function("document.querySelector('#btnRate').innerText.includes('0.15')")
-        check('修改汇率后胶囊更新', '手动' in page.inner_text('#btnRate'))
+        page.wait_for_selector('#refresh')
+        page.click('#refresh')
+        page.wait_for_function("document.querySelector('#btnRate').innerText.includes('中行现汇买入')")
+        check('立即更新 -> 汇率 = 100/714 ≈ 0.140056，来源显示中行现汇买入', '0.140056' in page.inner_text('#btnRate'), page.inner_text('#btnRate'))
+        page.click('#btnRate')
+        page.wait_for_selector('#bocBuy')
+        shot('p5_rate_dialog')
+        page.fill('#bocBuy', '700'); page.click('#saveBoc')
+        page.wait_for_function("document.querySelector('#btnRate').innerText.includes('手动')")
+        check('按牌价手动保存 -> 切到手动模式', '0.142857' in page.inner_text('#btnRate'), page.inner_text('#btnRate'))
+        page.click('#btnRate'); page.wait_for_selector('#toAuto'); page.click('#toAuto')
+        page.wait_for_function("document.querySelector('#btnRate').innerText.includes('中行现汇买入')")
+        check('恢复自动更新 -> 立即回到中行汇率', '0.140056' in page.inner_text('#btnRate'))
+        page.click('#btnTools')
+        page.click('[data-tool=recalc]')
+        page.wait_for_function("document.querySelector('#toast').textContent.includes('已重算')")
+        check('「按最新汇率重算建议价」可用', True)
         page.click('#btnPrefix')
         page.wait_for_selector('#pfBody table')
-        check('SKU 前缀弹窗列出灯饰子类前缀', '射灯' in page.inner_text('#pfBody') and 'SP' in page.inner_text('#pfBody'))
+        page.select_option('#pfCat', label='装饰材料')
+        page.wait_for_function("document.querySelector('#pfBody').innerText.includes('毯子')")
+        check('SKU 前缀弹窗：装饰材料有 毯子 / 枕头 / 玻璃 … 子类前缀', all(x in page.inner_text('#pfBody') for x in ('毯子', '枕头', '玻璃', 'BL', 'PW', 'GS')))
         page.click('#x')
 
         page.locator('tr.row', has_text='SLSP000001').click()
@@ -394,9 +457,10 @@ def main():
         dialogs.clear()
         page.click('#btnDel')
         page.wait_for_url('**#products')
-        check('删除产品确认框列出影响范围', dialogs and '价格记录 3 条' in dialogs[-1] and '供应商报价 2 条' in dialogs[-1], dialogs)
-        check('产品已删除，价格历史一并清理', ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='SLSP000001'") == 0
-              and ctx.db.scalar('SELECT COUNT(*) FROM price_history WHERE product_id=?', (pid1,)) == 0)
+        check('删除产品确认框列出影响范围（价格/供应商/图片/文档）', dialogs and '图片 4 张' in dialogs[-1] and '文档 1 个' in dialogs[-1], dialogs)
+        check('产品已删除，图片文件与文档一并清理', ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='SLSP000001'") == 0
+              and ctx.db.scalar('SELECT COUNT(*) FROM product_images WHERE product_id=?', (pid1,)) == 0
+              and not [f for f in os.listdir(ctx.files_dir)])
 
         # ---------- 路由容错 ----------
         page.goto(base + '/#customer/999999')

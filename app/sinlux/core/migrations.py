@@ -27,6 +27,11 @@ def migrate(db):
         db.execute("ALTER TABLE products ADD COLUMN spec_text TEXT DEFAULT ''")
         did('products 补列 spec_text')
 
+    for col, ddl in schema.PRODUCT_NEW_COLUMNS:
+        if not db.column_exists('products', col):
+            db.execute('ALTER TABLE products ADD COLUMN %s %s' % (col, ddl))
+            did('products 补列 %s' % col)
+
     # 3. 客户子表：新库直接建；旧库（无外键）保全孤儿后重建
     _ensure_child_tables(db, report, did)
 
@@ -52,6 +57,15 @@ def migrate(db):
                                      (r['created_at'] or now())[:10], '初始建档'))
     if rows:
         did('补初始成本历史 %d 条' % len(rows))
+
+    # 6b. 旧版每个产品只有 products.image_path 一张图：补成相册第一张（文件原样保留，标记未规范化）
+    legacy = db.query("""SELECT id, image_path FROM products WHERE COALESCE(image_path,'')<>''
+        AND id NOT IN (SELECT product_id FROM product_images)""")
+    for r in legacy:
+        db.execute('INSERT INTO product_images(product_id,file,sort_order,normalized) VALUES(?,?,0,0)',
+                   (r['id'], r['image_path'].split('/')[-1]))
+    if legacy:
+        did('产品旧图并入相册 %d 张' % len(legacy))
 
     # 7. 索引（放在补列之后）
     db.executescript(schema.INDEXES)

@@ -4,12 +4,13 @@
 DEFAULT_CATEGORIES = [
     {'code': 'lighting', 'name': '灯饰', 'icon': '💡', 'sort_order': 1},
     {'code': 'furniture', 'name': '家具', 'icon': '🪟', 'sort_order': 2},
-    {'code': 'other', 'name': '其他', 'icon': '📦', 'sort_order': 3},
+    {'code': 'decor', 'name': '装饰材料', 'icon': '🏺', 'sort_order': 3},
+    {'code': 'other', 'name': '其他', 'icon': '📦', 'sort_order': 4},
 ]
 
 LIGHTING_FIELDS = [
     {'key': 'subcategory', 'label': '子类', 'type': 'select', 'required': True,
-     'options': '射灯|筒灯|灯带|球泡|面板灯|吊灯|壁灯|台灯|工矿灯|路灯|投光灯|轨道灯|线条灯|装饰灯|其他'},
+     'options': '射灯|筒灯|灯带|球泡|面板灯|吊灯|壁灯|台灯|工矿灯|路灯|投光灯|轨道灯|线条灯|装饰灯|吸顶灯|落地灯|泛光灯|草坪灯|庭院灯|其他'},
     {'key': 'wattage', 'label': '瓦数', 'type': 'number', 'required': True, 'unit': 'W'},
     {'key': 'cct', 'label': '色温', 'type': 'text', 'required': True, 'placeholder': '如 3000K / 4000K / 2700-6500K 可调'},
     {'key': 'voltage', 'label': '电压', 'type': 'select', 'required': True,
@@ -33,7 +34,7 @@ LIGHTING_FIELDS = [
 
 FURNITURE_FIELDS = [
     {'key': 'subcategory', 'label': '子类', 'type': 'select', 'required': True,
-     'options': '卫浴柜|办公椅|办公桌|沙发|床架|餐桌|餐椅|柜子|茶几|床头柜|书架|鞋柜|其他'},
+     'options': '卫浴柜|办公椅|办公桌|沙发|床架|餐桌|餐椅|柜子|茶几|床头柜|书架|鞋柜|床垫|床头板|衣柜|电视柜|行李架|梳妆台|扶手椅|边几|吧椅|凳子|户外家具|躺椅|其他'},
     {'key': 'dimensions', 'label': '尺寸 W×D×H', 'type': 'text', 'required': True, 'placeholder': '如 900×500×850mm'},
     {'key': 'material', 'label': '主体材质', 'type': 'select', 'required': True,
      'options': '实木|多层板|MDF|刨花板|金属|玻璃|布艺|皮质|塑料|混合材质'},
@@ -52,13 +53,15 @@ FURNITURE_FIELDS = [
     {'key': 'hardware_brand', 'label': '五金件品牌', 'type': 'select',
      'options': 'DTC|Blum|海蒂诗 Hettich|海福乐 Hafele|国产|其他'},
     {'key': 'certifications', 'label': '认证', 'type': 'multi',
-     'options': 'CARB Phase 2|TSCA Title VI|FSC|BSCI|SEDEX|CAL 117 阻燃|GREENGUARD'},
+     'options': 'CARB Phase 2|TSCA Title VI|FSC|BSCI|SEDEX|CAL 117 阻燃|BS 5852|GREENGUARD'},
     {'key': 'warranty', 'label': '保修', 'type': 'select', 'options': '1 年|2 年|3 年|5 年|10 年|终身|无'},
     {'key': 'use_scenario', 'label': '适用场景', 'type': 'multi', 'options': '家用|酒店|办公|户外|商业|医疗'},
     {'key': 'customizable', 'label': '可定制', 'type': 'multi', 'options': '颜色|尺寸|材质|五金|包装|LOGO'},
     {'key': 'install_method', 'label': '安装方式', 'type': 'select', 'options': '无需安装|自带说明书|需专业安装|视频教程'},
     {'key': 'moq', 'label': '最小起订量', 'type': 'number', 'unit': 'pcs'},
     {'key': 'lead_time', 'label': '生产周期', 'type': 'number', 'unit': '天'},
+    {'key': 'outdoor_use', 'label': '使用环境', 'type': 'select', 'options': '室内|室外|室内外通用',
+     'placeholder': '加勒比沿海：室外需防盐雾/防潮'},
     {'key': 'remark', 'label': '备注', 'type': 'textarea', 'placeholder': '客户特殊要求、定制说明等'},
 ]
 
@@ -74,7 +77,7 @@ OTHER_FIELDS = [
 ]
 
 DEFAULT_CATEGORIES = DEFAULT_CATEGORIES + [
-    {'code': 'jewelry', 'name': '首饰', 'icon': '💍', 'sort_order': 4},
+    {'code': 'jewelry', 'name': '首饰', 'icon': '💍', 'sort_order': 5},
 ]
 
 # 首饰类目字段：subcategory 用于区分 耳环/戒指/手链/项链。
@@ -94,7 +97,24 @@ JEWELRY_FIELDS = [
     {'key': 'remark', 'label': '备注', 'type': 'textarea'},
 ]
 
+DECOR_FIELDS = [
+    {'key': 'subcategory', 'label': '子类', 'type': 'select',
+     'options': '毯子|枕头|窗帘|地毯|玻璃|镜子|花瓶|摆件|挂画|布草|墙纸|餐具|香薰蜡烛|花艺|其他'},
+    {'key': 'material', 'label': '主体材质', 'type': 'select',
+     'options': '棉|亚麻|羊毛|聚酯纤维|丝绒|真丝|玻璃|陶瓷|金属|树脂|木|藤编|其他'},
+    {'key': 'dimensions', 'label': '尺寸', 'type': 'text', 'placeholder': '如 130×170cm / Φ30×H45cm'},
+    {'key': 'color', 'label': '颜色/图案', 'type': 'text'},
+    {'key': 'gsm', 'label': '克重', 'type': 'number', 'unit': 'g/m²', 'placeholder': '毯子/窗帘/布草'},
+    {'key': 'fill', 'label': '填充物', 'type': 'select', 'options': '羽绒|羽毛|聚酯棉|记忆棉|乳胶|荞麦壳|无', 'placeholder': '枕头/靠垫'},
+    {'key': 'care', 'label': '洗涤/保养', 'type': 'text', 'placeholder': '如 可机洗 30°C'},
+    {'key': 'fire_rating', 'label': '阻燃标准', 'type': 'multi', 'options': 'NFPA 701|BS 5852|CAL 117|EN 1021|无'},
+    {'key': 'certifications', 'label': '认证', 'type': 'multi', 'options': 'OEKO-TEX|GRS|REACH|SGS|FSC'},
+    {'key': 'customizable', 'label': '可定制', 'type': 'multi', 'options': '颜色|尺寸|图案|LOGO|包装'},
+    {'key': 'remark', 'label': '备注', 'type': 'textarea', 'placeholder': '其他规格说明、包装信息等'},
+]
+
 DEFAULT_FIELDS_MAP = {
+    'decor': DECOR_FIELDS,
     'lighting': LIGHTING_FIELDS,
     'furniture': FURNITURE_FIELDS,
     'other': OTHER_FIELDS,

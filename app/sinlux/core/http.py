@@ -54,6 +54,18 @@ class Request:
                 raise ApiError('请求体必须是 JSON 对象')
         return self._body
 
+    def read_bytes(self, max_bytes):
+        """读取整个请求体（原始字节，不是 JSON），限制大小。"""
+        n = int(self.headers.get('Content-Length') or 0)
+        if n <= 0:
+            raise ApiError('上传内容为空')
+        if n > max_bytes:
+            raise ApiError('文件太大(%dMB)，超过 %dMB 上限' % (n // 1048576, max_bytes // 1048576), 413)
+        data = self.handler.rfile.read(n)
+        if len(data) != n:
+            raise ApiError('上传中断，文件不完整')
+        return data
+
     def save_upload(self, dest_path, max_bytes):
         """流式落盘（不整体读进内存）。返回字节数。"""
         n = int(self.headers.get('Content-Length') or 0)

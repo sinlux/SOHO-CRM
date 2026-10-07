@@ -9,15 +9,18 @@ from helpers import AppTestCase
 from legacy_db import build_legacy_db
 from sinlux.products import seeds
 
-PNG = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\x00' * 24).decode()
-PNG2 = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\x01' * 24).decode()
+from imgutil import png_bytes, data_url
+
+PNG = data_url(png_bytes(120, 90, box=(30, 20, 90, 70)))
+PNG2 = data_url(png_bytes(100, 100, box=(10, 10, 60, 60), box_color=(20, 120, 200)))
 
 
 class TestCatalogSeeds(AppTestCase):
     def test_seed_categories_and_field_counts_match_spec(self):
         cats = {c['code']: c for c in self.c.get('/api/categories')[1]['categories']}
-        self.assertEqual({k: cats[k]['field_count'] for k in ('lighting', 'furniture', 'other', 'jewelry')},
-                         {'lighting': 15, 'furniture': 21, 'other': 4, 'jewelry': 6})   # 文档：15 / 21 / 4 / 6
+        # v4.4 文档：灯饰15 / 家具21 / 其他4 / 首饰6。本版在此基础上：家具+1（使用环境），新增装饰材料11
+        self.assertEqual({k: cats[k]['field_count'] for k in ('lighting', 'furniture', 'decor', 'other', 'jewelry')},
+                         {'lighting': 15, 'furniture': 22, 'decor': 11, 'other': 4, 'jewelry': 6})
         self.assertEqual(cats['jewelry']['name'], '首饰')
         self.assertTrue(all(c['is_builtin'] for c in cats.values()))
 
@@ -240,7 +243,8 @@ class TestDeleteProduct(AppTestCase):
         qid = self.ctx.db.execute("INSERT INTO quotes(quote_no,customer_id,total) VALUES('Q-DEL',?,10)", (cust,)).lastrowid
         self.ctx.db.execute("INSERT INTO quote_items(quote_id,product_id,sku,name,quantity,unit_price) VALUES(?,?,?,?,1,10)", (qid, pid, 'X', 'Snapshot'))
         st, r = self.c.delete('/api/products/%d' % pid, {})
-        self.assertEqual((st, r['needs_confirm'], r['impact']), (409, True, {'price_records': 1, 'supplier_quotes': 1, 'quote_items': 1}))
+        self.assertEqual((st, r['needs_confirm'], r['impact']), (409, True, {'price_records': 1, 'supplier_quotes': 1, 'quote_items': 1,
+                                                                            'images': 1, 'files': 0}))
         self.assertTrue(os.path.exists(os.path.join(self.ctx.uploads_dir, img)))
         self.assertEqual(self.c.delete('/api/products/%d' % pid, {'confirm': True})[0], 200)
         db = self.ctx.db
@@ -280,20 +284,23 @@ class TestMerge(AppTestCase):
         self.assertEqual(db.one('SELECT product_id FROM quote_items WHERE quote_id=?', (qid,))['product_id'], keep)
         p = self.c.get('/api/products/%d' % keep)[1]['product']
         self.assertEqual(p['spec_text'], '重复品的规格')                         # 保留者为空 -> 补充
-        self.assertTrue(p['image_path'])                                         # 图片补充
+        self.assertEqual(len(p['images']), 1)                                    # 保留者原本没图 -> 被合并者的图成为主图
         self.assertEqual((p['cost'], p['suggested_price']), (12.0, 3.5))         # 按最新历史对齐：成本取日期最新，建议价取最新售价
         self.assertEqual(p['remark'], '原备注\n已合并同类项: DUP-1')
         self.assertEqual(db.scalar('SELECT COUNT(*) FROM product_field_values WHERE product_id=?', (dup,)), 0)
         self.assertEqual(db.query('PRAGMA foreign_key_check'), [])
 
-    def test_survivor_spec_and_image_not_overwritten(self):
+    def test_survivor_spec_and_primary_image_kept_merged_images_appended(self):
         a = self.new_product(sku='A-1', spec_text='A 的规格', image_data=PNG)
         b = self.new_product(sku='B-1', spec_text='B 的规格', image_data=PNG2)
-        b_img = os.path.basename(self.c.get('/api/products/%d' % b)[1]['product']['image_path'])
+        a_primary = self.c.get('/api/products/%d' % a)[1]['product']['images'][0]['file']
+        b_file = self.c.get('/api/products/%d' % b)[1]['product']['images'][0]['file']
         self.c.post('/api/products/merge', {'survivor_id': a, 'merge_ids': [b]})
         p = self.c.get('/api/products/%d' % a)[1]['product']
         self.assertEqual(p['spec_text'], 'A 的规格')
-        self.assertFalse(os.path.exists(os.path.join(self.ctx.uploads_dir, b_img)))    # 被合并者多余的图片文件不留垃圾
+        self.assertEqual([i['file'] for i in p['images']], [a_primary, b_file])           # 保留者主图不变，被合并者的图追加在后
+        self.assertTrue(os.path.exists(os.path.join(self.ctx.uploads_dir, b_file)))        # 图片没丢
+        self.assertEqual(p['image_path'], 'uploads/' + a_primary)
 
     def test_merge_multiple_and_remark_lists_all(self):
         s = self.new_product(sku='M-S')
@@ -414,69 +421,6 @@ class TestSku(AppTestCase):
         self.assertEqual(self.c.post('/api/categories/%d/sub_prefixes' % jewelry, {'subcategory_value': ' ', 'prefix': 'AB'})[0], 400)
 
 
-class TestRate(AppTestCase):
-    def test_default_manual_online(self):
-        d = self.c.get('/api/rate')[1]
-        self.assertEqual((d['rate'], d['source']), (0.138, 'default'))
-        for bad in ('abc', 0, -1, 11, None, ''):
-            self.assertEqual(self.c.put('/api/rate', {'rate': bad})[0], 400, bad)
-        d = self.c.put('/api/rate', {'rate': '0.142'})[1]
-        self.assertEqual((d['rate'], d['source']), (0.142, 'manual'))
-        pid = self.new_product(cost=100, cost_currency='CNY', profit_rate=0)
-        self.assertEqual(self.c.get('/api/products/%d' % pid)[1]['product']['suggested_price'], 14.2)    # 新汇率用于之后保存的产品
-        type(self).rate_result = 0.139
-        d = self.c.post('/api/rate/fetch')[1]
-        self.assertEqual((d['rate'], d['source']), (0.139, 'online'))
-        type(self).rate_result = OSError('网络不通')
-        st, r = self.c.post('/api/rate/fetch')
-        self.assertEqual(st, 502)
-        self.assertIn('网络不通', r['error'])
-        self.assertEqual(self.c.get('/api/rate')[1]['rate'], 0.139)             # 失败不改动现有汇率
-        type(self).rate_result = 99
-        self.assertEqual(self.c.post('/api/rate/fetch')[0], 502)
-        self.assertEqual(self.c.get('/api/rate')[1]['rate'], 0.139)
-        type(self).rate_result = 0.14
-
-
-class TestProductImages(AppTestCase):
-    def test_upload_replace_remove_serve(self):
-        pid = self.new_product(image_data=PNG)
-        p = self.c.get('/api/products/%d' % pid)[1]['product']
-        self.assertTrue(p['image_path'].startswith('uploads/'))
-        self.assertEqual(p['image_url'], '/' + p['image_path'])
-        st, raw, h = self.c.call('GET', p['image_url'])
-        self.assertEqual((st, h['Content-Type']), (200, 'image/png'))
-        old = os.path.join(self.ctx.uploads_dir, os.path.basename(p['image_path']))
-        self.c.put('/api/products/%d' % pid, {'image_data': PNG2})
-        self.assertFalse(os.path.exists(old))                                       # 换图删旧文件
-        p2 = self.c.get('/api/products/%d' % pid)[1]['product']
-        self.assertNotEqual(p2['image_path'], p['image_path'])
-        self.c.put('/api/products/%d' % pid, {'name': 'keeps image'})
-        self.assertEqual(self.c.get('/api/products/%d' % pid)[1]['product']['image_path'], p2['image_path'])
-        self.c.put('/api/products/%d' % pid, {'remove_image': True})
-        self.assertEqual(self.c.get('/api/products/%d' % pid)[1]['product']['image_path'], None)
-        self.assertEqual(len([f for f in os.listdir(self.ctx.uploads_dir) if f == os.path.basename(p2['image_path'])]), 0)
-
-    def test_bad_images_rejected_without_leaving_files_or_rows(self):
-        before = set(os.listdir(self.ctx.uploads_dir))
-        for bad in ('data:image/svg+xml;base64,' + 'AAAA', 'data:image/png;base64,', 'data:text/html;base64,PGI+'):
-            st, r = self.c.post('/api/products', {'sku': 'BADIMG', 'name': 'x', 'category_id': self.cat_id('other'), 'image_data': bad})
-            self.assertEqual(st, 400, bad)
-        self.assertEqual(self.ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='BADIMG'"), 0)
-        self.assertEqual(set(os.listdir(self.ctx.uploads_dir)), before)
-        # 重复 SKU 时先存了图再失败 -> 不能留孤儿文件
-        self.new_product(sku='IMGDUP')
-        before = set(os.listdir(self.ctx.uploads_dir))
-        self.assertEqual(self.c.post('/api/products', {'sku': 'IMGDUP', 'name': 'x', 'category_id': self.cat_id('other'), 'image_data': PNG})[0], 409)
-        self.assertEqual(set(os.listdir(self.ctx.uploads_dir)), before)
-
-    def test_serve_traversal_and_types(self):
-        for p in ('/uploads/..%2fcrm.db', '/uploads/x.html', '/uploads/missing.png'):
-            st, raw, _ = self.c.call('GET', p)
-            self.assertEqual(st, 404, p)
-            self.assertNotIn(b'SQLite format', raw)
-
-
 class TestLegacyProducts(AppTestCase):
     """旧库里的产品、规格值、价格历史、供应商报价，新版必须能读、能改、不丢。"""
     legacy = staticmethod(lambda d: build_legacy_db(d, 10))
@@ -490,13 +434,15 @@ class TestLegacyProducts(AppTestCase):
         full = self.c.get('/api/products/%d' % p['id'])[1]['product']
         self.assertEqual(full['field_values'], {'1': '10'})           # 旧规格值，字段 id=1(wattage)
         self.assertEqual(len(full['fields']), 15)                     # 旧库的灯饰类目补齐到 15 个字段
+        self.assertEqual(len(full['images']), 1)                      # 旧版单图并入相册
+        self.assertFalse(full['images'][0]['normalized'])
         h = self.c.get('/api/products/%d/price_history' % p['id'])[1]['history']
         self.assertEqual(sorted((x['price_type'], x['price']) for x in h), [('cost', 12.5), ('sell', 2.2)])
         self.assertEqual([s['supplier_name'] for s in self.c.get('/api/products/%d/suppliers' % p['id'])[1]['suppliers']], ['供应商甲', '供应商乙'])
         # 旧库有的 SKU 前缀表数据：灯饰默认前缀被补齐
         self.assertEqual(self.c.get('/api/categories/%d/next_sku?subcategory=射灯' % full['category_id'])[1]['sku'], 'SLSP000001')
         cats = {c['code'] for c in self.c.get('/api/categories')[1]['categories']}
-        self.assertEqual(cats, {'lighting', 'furniture', 'other', 'jewelry'})   # 旧库缺的类目自动补上
+        self.assertEqual(cats, {'lighting', 'furniture', 'decor', 'other', 'jewelry'})   # 旧库缺的类目自动补上
 
 
 

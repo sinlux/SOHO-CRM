@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""产品库：CRUD、结构化规格值、图片、供应商比价、合并同类项。"""
+"""产品库：CRUD、结构化规格值、相册、文档、复制、合并同类项、供应商比价。"""
 import os
 
-from ..core import images
+from ..core import images as rawimg
 from ..core.util import ApiError, like, now, valid_date
 from .pricing import CURRENCIES, UNCONVERTED, suggest_usd
 
-IMG_PREFIX = 'uploads/'   # products.image_path 沿用旧版存法：uploads/<文件名>
+STATUSES = {'active': '在售', 'draft': '草稿', 'discontinued': '停产'}
+SORTS = {'updated': 'p.updated_at DESC, p.id DESC', 'created': 'p.id DESC', 'sku': 'p.sku COLLATE NOCASE ASC',
+         'name': 'p.name COLLATE NOCASE ASC', 'cost': 'p.cost IS NULL, p.cost ASC, p.id DESC'}
+TEXT_LIMITS = {'brand': 100, 'series': 100, 'hs_code': 20, 'origin': 60, 'unit': 16}
 
 
 def _num(v, name, lo=None, hi=None, integer=False):
@@ -34,33 +37,44 @@ def _txt(v):
 
 
 class ProductService:
-    def __init__(self, db, uploads_dir, rates, history, catalog):
+    def __init__(self, db, rates, history, catalog, media):
         self.db = db
-        self.dir = uploads_dir
         self.rates = rates
         self.history = history
         self.catalog = catalog
-        os.makedirs(uploads_dir, exist_ok=True)
+        self.media = media
 
     # ---------- 读 ----------
     _COLS = """p.id, p.sku, p.name, p.category_id, p.image_path, p.cost, p.cost_currency, p.profit_rate,
         p.suggested_price, p.moq, p.lead_time, p.supplier, p.remark, COALESCE(p.spec_text,'') AS spec_text,
-        p.created_at, p.updated_at, c.name AS category_name, c.icon AS category_icon"""
+        COALESCE(p.status,'active') AS status, COALESCE(p.unit,'pcs') AS unit, COALESCE(p.brand,'') AS brand,
+        COALESCE(p.series,'') AS series, COALESCE(p.hs_code,'') AS hs_code, COALESCE(p.origin,'') AS origin,
+        p.pcs_per_carton, p.carton_l, p.carton_w, p.carton_h, p.gross_weight, p.net_weight,
+        p.created_at, p.updated_at, c.name AS category_name, c.icon AS category_icon,
+        (SELECT file FROM product_images i WHERE i.product_id=p.id ORDER BY i.sort_order, i.id LIMIT 1) AS img_file,
+        (SELECT thumb FROM product_images i WHERE i.product_id=p.id ORDER BY i.sort_order, i.id LIMIT 1) AS img_thumb,
+        (SELECT COUNT(*) FROM product_images i WHERE i.product_id=p.id) AS image_count"""
 
-    def list(self, search='', category_id=None, limit=100, offset=0):
+    def list(self, search='', category_id=None, status='', sort='updated', limit=100, offset=0):
         where, params = ['1=1'], []
         if category_id:
             where.append('p.category_id=?'); params.append(int(category_id))
+        if status:
+            if status not in STATUSES:
+                raise ApiError('状态无效')
+            where.append("COALESCE(p.status,'active')=?"); params.append(status)
         if search:
             k = like(search)
-            where.append("(p.sku LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR p.supplier LIKE ? ESCAPE '\\' "
-                         "OR p.spec_text LIKE ? ESCAPE '\\' OR p.remark LIKE ? ESCAPE '\\')")
-            params += [k] * 5
+            cols = ('p.sku', 'p.name', 'p.supplier', 'p.spec_text', 'p.remark', 'p.brand', 'p.series')
+            where.append('(' + ' OR '.join("%s LIKE ? ESCAPE '\\'" % c for c in cols) + ')')
+            params += [k] * len(cols)
+        if sort not in SORTS:
+            raise ApiError('排序方式无效')
         w = ' AND '.join(where)
         total = self.db.scalar('SELECT COUNT(*) FROM products p WHERE ' + w, params)
         limit = max(1, min(int(limit), 1000))
         rows = self.db.query('SELECT %s FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE %s '
-                             'ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?' % (self._COLS, w),
+                             'ORDER BY %s LIMIT ? OFFSET ?' % (self._COLS, w, SORTS[sort]),
                              params + [limit, max(0, int(offset))])
         for r in rows:
             self._decorate(r)
@@ -78,12 +92,23 @@ class ProductService:
         p['field_values'] = {str(r['field_id']): r['value'] for r in self.db.query(
             'SELECT field_id, value FROM product_field_values WHERE product_id=?', (pid,))}
         p['fields'] = self.catalog.fields(p['category_id']) if p['category_id'] else []
+        p['images'] = self.media.list_images(pid)
+        p['files'] = self.media.list_files(pid)
         return p
 
-    @staticmethod
-    def _decorate(p):
-        p['image_url'] = '/' + p['image_path'] if p.get('image_path') else ''
+    def _decorate(self, p):
+        if p.get('img_file'):
+            p['image_url'] = '/uploads/' + p['img_file']
+            p['thumb_url'] = '/uploads/' + (p['img_thumb'] or p['img_file'])
+        elif p.get('image_path'):                     # 极旧数据：只有 image_path、没有相册行
+            p['image_url'] = p['thumb_url'] = '/' + p['image_path']
+        else:
+            p['image_url'] = p['thumb_url'] = ''
+        p['status_label'] = STATUSES.get(p['status'], p['status'])
         p['suggested_unconverted'] = p.get('cost_currency') in UNCONVERTED and p.get('suggested_price') is not None
+        l, w, h = p.get('carton_l'), p.get('carton_w'), p.get('carton_h')
+        p['carton_cbm'] = round(l * w * h / 1e6, 4) if l and w and h else None
+        p['unit_cbm'] = round(p['carton_cbm'] / p['pcs_per_carton'], 4) if p['carton_cbm'] and p.get('pcs_per_carton') else None
         return p
 
     def impact(self, pid):
@@ -91,11 +116,20 @@ class ProductService:
         n = lambda sql: self.db.scalar(sql, (pid,))
         return {'price_records': n('SELECT COUNT(*) FROM price_history WHERE product_id=?'),
                 'supplier_quotes': n('SELECT COUNT(*) FROM supplier_quotes WHERE product_id=?'),
-                'quote_items': n('SELECT COUNT(*) FROM quote_items WHERE product_id=?')}
+                'quote_items': n('SELECT COUNT(*) FROM quote_items WHERE product_id=?'),
+                'images': n('SELECT COUNT(*) FROM product_images WHERE product_id=?'),
+                'files': n('SELECT COUNT(*) FROM product_files WHERE product_id=?')}
+
+    def usage(self, pid):
+        """这个产品出现在哪些报价单里（只读，报价单本身在第三批）。"""
+        self.require(pid)
+        return self.db.query("""SELECT q.id AS quote_id, q.quote_no, q.status, q.currency, q.created_at,
+              c.id AS customer_id, c.company, i.quantity, i.unit_price
+            FROM quote_items i JOIN quotes q ON q.id=i.quote_id LEFT JOIN customers c ON c.id=q.customer_id
+            WHERE i.product_id=? ORDER BY q.created_at DESC, q.id DESC LIMIT 200""", (pid,))
 
     # ---------- 校验 ----------
     def _clean(self, d, cur=None):
-        """返回规整后的字段 dict。cur=None 为新建；否则为更新（缺省字段沿用现值）。"""
         g = lambda k, default=None: d[k] if k in d else (cur[k] if cur else default)
         out = {}
         out['sku'] = _txt(g('sku', ''))
@@ -123,6 +157,24 @@ class ProductService:
         out['supplier'] = _txt(g('supplier')) or None
         out['remark'] = _txt(g('remark')) or None
         out['spec_text'] = _txt(g('spec_text', ''))
+        st = _txt(g('status', 'active')) or 'active'
+        if st not in STATUSES:
+            raise ApiError('状态无效，可选：' + '/'.join(STATUSES))
+        out['status'] = st
+        for k, lim in TEXT_LIMITS.items():
+            v = _txt(g(k, 'pcs' if k == 'unit' else ''))
+            if len(v) > lim:
+                raise ApiError('%s最长 %d 个字符' % ({'brand': '品牌', 'series': '系列', 'hs_code': 'HS 编码', 'origin': '原产地', 'unit': '单位'}[k], lim))
+            out[k] = v or ('pcs' if k == 'unit' else '')
+        if out['hs_code'] and not all(ch.isdigit() or ch in '. -' for ch in out['hs_code']):
+            raise ApiError('HS 编码只能包含数字、点、空格和短横线')
+        out['pcs_per_carton'] = _num(g('pcs_per_carton'), '每箱数量', lo=1, integer=True)
+        for k, label in (('carton_l', '外箱长'), ('carton_w', '外箱宽'), ('carton_h', '外箱高')):
+            out[k] = _num(g(k), label, lo=0, hi=1000)
+        out['gross_weight'] = _num(g('gross_weight'), '毛重', lo=0)
+        out['net_weight'] = _num(g('net_weight'), '净重', lo=0)
+        if out['gross_weight'] is not None and out['net_weight'] is not None and out['net_weight'] > out['gross_weight']:
+            raise ApiError('净重不能大于毛重')
         return out
 
     def _check_fields(self, category_id, values):
@@ -151,6 +203,20 @@ class ProductService:
     def _suggest(self, f):
         return suggest_usd(f['cost'], f['cost_currency'], f['profit_rate'], self.rates.rate())
 
+    _WRITE_COLS = ('sku', 'name', 'category_id', 'cost', 'cost_currency', 'profit_rate', 'moq', 'lead_time', 'supplier',
+                   'remark', 'spec_text', 'status', 'unit', 'brand', 'series', 'hs_code', 'origin', 'pcs_per_carton',
+                   'carton_l', 'carton_w', 'carton_h', 'gross_weight', 'net_weight')
+
+    def _image_ids(self, d):
+        """请求里的图片意图 → 图片编号列表；None 表示不改相册。兼容旧版 image_data / remove_image。"""
+        if 'images' in d and d['images'] is not None:
+            return d['images']
+        if d.get('image_data'):
+            return [self.media.stage_image(rawimg.decode_data_url(d['image_data'])[1])['id']]
+        if d.get('remove_image'):
+            return []
+        return None
+
     # ---------- 写 ----------
     def create(self, d):
         f = self._clean(d)
@@ -159,23 +225,19 @@ class ProductService:
         vals = self._check_fields(f['category_id'], d.get('field_values'))
         if d.get('price_date') and not valid_date(d['price_date']):
             raise ApiError('价格日期格式应为 YYYY-MM-DD')
-        img = images.save_data_url(self.dir, d['image_data']) if d.get('image_data') else None
-        try:
-            with self.db.tx():
-                ts = now()
-                pid = self.db.execute("""INSERT INTO products(sku,name,category_id,image_path,cost,cost_currency,
-                    profit_rate,suggested_price,moq,lead_time,supplier,remark,spec_text,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                                     (f['sku'], f['name'], f['category_id'], IMG_PREFIX + img if img else None,
-                                      f['cost'], f['cost_currency'], f['profit_rate'], self._suggest(f), f['moq'],
-                                      f['lead_time'], f['supplier'], f['remark'], f['spec_text'], ts, ts)).lastrowid
-                self._save_values(pid, vals)
-                if f['cost'] is not None:
-                    self.history.record(pid, 'cost', f['cost'], f['cost_currency'], effective_date=d.get('price_date'),
-                                        source=_txt(d.get('price_source')) or '手动建档')
-        except Exception:
-            images.remove_file(self.dir, img)
-            raise
+        ids = self._image_ids(d)
+        with self.db.tx():
+            ts = now()
+            cols = list(self._WRITE_COLS) + ['suggested_price', 'created_at', 'updated_at']
+            args = [f[c] for c in self._WRITE_COLS] + [self._suggest(f), ts, ts]
+            pid = self.db.execute('INSERT INTO products(%s) VALUES(%s)' % (','.join(cols), ','.join('?' * len(cols))),
+                                  args).lastrowid
+            self._save_values(pid, vals)
+            if ids:
+                self.media.apply_images(pid, ids)
+            if f['cost'] is not None:
+                self.history.record(pid, 'cost', f['cost'], f['cost_currency'], effective_date=d.get('price_date'),
+                                    source=_txt(d.get('price_source')) or '手动建档')
         return pid
 
     def update(self, pid, d):
@@ -188,54 +250,75 @@ class ProductService:
             vals = self._check_fields(f['category_id'], d.get('field_values'))
         if d.get('price_date') and not valid_date(d['price_date']):
             raise ApiError('价格日期格式应为 YYYY-MM-DD')
-        old_img = os.path.basename(cur['image_path']) if cur['image_path'] else None
-        new_img, drop_old = None, False
-        if d.get('image_data'):
-            new_img, drop_old = images.save_data_url(self.dir, d['image_data']), True
-            path = IMG_PREFIX + new_img
-        elif d.get('remove_image'):
-            path, drop_old = None, True
-        else:
-            path = cur['image_path']
+        ids = self._image_ids(d)
         # 只有成本/币种/利润率真的变了才重算建议价和记历史（只改名称不应动价格）
         price_changed = (f['cost'], f['cost_currency']) != (cur['cost'], cur['cost_currency'])
         sug = self._suggest(f) if (price_changed or f['profit_rate'] != cur['profit_rate']) else cur['suggested_price']
-        try:
-            with self.db.tx():
-                self.db.execute("""UPDATE products SET sku=?,name=?,category_id=?,image_path=?,cost=?,cost_currency=?,
-                    profit_rate=?,suggested_price=?,moq=?,lead_time=?,supplier=?,remark=?,spec_text=?,updated_at=? WHERE id=?""",
-                                (f['sku'], f['name'], f['category_id'], path, f['cost'], f['cost_currency'],
-                                 f['profit_rate'], sug, f['moq'], f['lead_time'], f['supplier'], f['remark'],
-                                 f['spec_text'], now(), pid))
-                if vals is not None:
-                    self._save_values(pid, vals)
-                if price_changed and f['cost'] is not None:
-                    self.history.record(pid, 'cost', f['cost'], f['cost_currency'], effective_date=d.get('price_date'),
-                                        source=_txt(d.get('price_source')) or '手动修改')
-        except Exception:
-            images.remove_file(self.dir, new_img)
-            raise
-        if drop_old:
-            images.remove_file(self.dir, old_img)
+        gone = []
+        with self.db.tx():
+            sets = ','.join('%s=?' % c for c in self._WRITE_COLS)
+            self.db.execute('UPDATE products SET %s,suggested_price=?,updated_at=? WHERE id=?' % sets,
+                            [f[c] for c in self._WRITE_COLS] + [sug, now(), pid])
+            if vals is not None:
+                self._save_values(pid, vals)
+            if ids is not None:
+                gone = self.media.apply_images(pid, ids)
+            if price_changed and f['cost'] is not None:
+                self.history.record(pid, 'cost', f['cost'], f['cost_currency'], effective_date=d.get('price_date'),
+                                    source=_txt(d.get('price_source')) or '手动修改')
+        self.media.remove_files(gone)
 
     def delete(self, pid):
-        p = self.require(pid)
-        shots = [r['screenshot_path'] for r in self.db.query(
+        self.require(pid)
+        shots = [os.path.basename(r['screenshot_path']) for r in self.db.query(
             "SELECT screenshot_path FROM supplier_quotes WHERE product_id=? AND COALESCE(screenshot_path,'')<>''", (pid,))]
         with self.db.tx():
             self.db.execute('DELETE FROM price_history WHERE product_id=?', (pid,))
             self.db.execute('DELETE FROM supplier_quotes WHERE product_id=?', (pid,))
             self.db.execute('DELETE FROM product_field_values WHERE product_id=?', (pid,))
             self.db.execute('UPDATE quote_items SET product_id=NULL WHERE product_id=?', (pid,))   # 历史报价明细是快照，保留
+            imgs = self.media.delete_all_images(pid)
+            docs = self.media.delete_all_files(pid)
             self.db.execute('DELETE FROM products WHERE id=?', (pid,))
-        for path in [p['image_path']] + shots:
-            if path:
-                images.remove_file(self.dir, os.path.basename(path))
+        self.media.remove_files(imgs + shots)
+        self.media.remove_docs(docs)
+
+    def duplicate(self, pid, new_sku):
+        """复制产品（常用于同款不同规格）：复制资料、规格值、相册；不复制价格历史、供应商、文档。"""
+        src = self.get(pid)
+        d = {k: src[k] for k in self._WRITE_COLS}
+        d['sku'] = new_sku
+        d['name'] = src['name']
+        d['field_values'] = src['field_values']
+        d['price_source'] = '复制自 ' + src['sku']
+        new_id = self.create(d)
+        with self.db.tx():
+            self.media.copy_images(pid, new_id)
+        return new_id
+
+    def recalc_suggested(self, ids=None):
+        """按当前汇率重算建议价。只处理"建议价由公式产生"的产品：有成本、且没有售价历史
+        （有成交价的产品，建议价是对齐的最新成交价，不动）。"""
+        rows = self.db.query('SELECT id, cost, cost_currency, profit_rate, suggested_price FROM products WHERE cost IS NOT NULL')
+        if ids is not None:
+            keep = {int(i) for i in ids}
+            rows = [r for r in rows if r['id'] in keep]
+        rate, n, skipped = self.rates.rate(), 0, 0
+        with self.db.tx():
+            for r in rows:
+                if self.db.one("SELECT 1 FROM price_history WHERE product_id=? AND price_type='sell'", (r['id'],)):
+                    skipped += 1
+                    continue
+                sug = suggest_usd(r['cost'], r['cost_currency'], r['profit_rate'], rate)
+                if sug != r['suggested_price']:
+                    self.db.execute('UPDATE products SET suggested_price=? WHERE id=?', (sug, r['id']))
+                    n += 1
+        return {'updated': n, 'skipped_has_sell_price': skipped, 'rate': rate}
 
     # ---------- 合并同类项 ----------
     def merge(self, survivor_id, merge_ids):
-        """把 merge_ids 并入 survivor。价格历史/成交明细/供应商比价全部迁移；
-        保留产品的规格和图片只在为空时才补；合并后按最新历史重算当前价；备注留痕。"""
+        """把 merge_ids 并入 survivor。价格历史/成交明细/供应商比价/相册/文档全部迁移；
+        保留产品的规格描述只在为空时才补；合并后按最新历史重算当前价；备注留痕。"""
         survivor_id = int(survivor_id)
         ids = []
         for m in merge_ids or []:
@@ -246,33 +329,26 @@ class ProductService:
             raise ApiError('没有要合并的产品')
         sv = self.require(survivor_id)
         olds = [self.require(m) for m in ids]           # 任何一个不存在就整体拒绝
-        merged_skus, orphan_files = [], []
+        merged_skus = []
         with self.db.tx():
             for mp in olds:
-                for t in ('price_history', 'quote_items', 'supplier_quotes'):
+                for t in ('price_history', 'quote_items', 'supplier_quotes', 'product_files'):
                     self.db.execute('UPDATE %s SET product_id=? WHERE product_id=?' % t, (survivor_id, mp['id']))
                 if not sv['spec_text'].strip() and mp['spec_text'].strip():
                     self.db.execute('UPDATE products SET spec_text=? WHERE id=?', (mp['spec_text'], survivor_id))
                     sv['spec_text'] = mp['spec_text']
-                if mp['image_path']:
-                    if not sv['image_path']:
-                        self.db.execute('UPDATE products SET image_path=? WHERE id=?', (mp['image_path'], survivor_id))
-                        sv['image_path'] = mp['image_path']
-                    else:
-                        orphan_files.append(os.path.basename(mp['image_path']))
+                self.media.move_images(mp['id'], survivor_id)       # 图片追加到保留产品相册末尾，保留产品的主图不变
                 self.db.execute('DELETE FROM product_field_values WHERE product_id=?', (mp['id'],))
                 self.db.execute('DELETE FROM products WHERE id=?', (mp['id'],))
                 merged_skus.append(mp['sku'])
             note = ((sv['remark'] or '') + ('\n' if sv['remark'] else '') + '已合并同类项: ' + ', '.join(merged_skus)).strip()
             self.db.execute('UPDATE products SET remark=? WHERE id=?', (note, survivor_id))
             self.history.realign(survivor_id)
-        for fn in orphan_files:
-            images.remove_file(self.dir, fn)
         return {'merged': merged_skus, 'survivor_sku': sv['sku']}
 
 
 class SupplierService:
-    """每个产品可记录多个供应商人民币报价，标记一个"采纳"。采纳会同步为产品当前成本并写入成本历史。"""
+    """每个产品可记录多个供应商人民币报价，标记一个"采纳"。采纳会同步为产品当前成本并写入价格历史。"""
 
     def __init__(self, db, uploads_dir, products, history):
         self.db = db
@@ -298,17 +374,17 @@ class SupplierService:
         date = d.get('quote_date') or None
         if date and not valid_date(date):
             raise ApiError('报价日期格式应为 YYYY-MM-DD')
-        shot = images.save_data_url(self.dir, d['screenshot_data'], 'sq_') if d.get('screenshot_data') else None
+        shot = rawimg.save_data_url(self.dir, d['screenshot_data'], 'sq_') if d.get('screenshot_data') else None
         try:
             with self.db.tx():
                 qid = self.db.execute("""INSERT INTO supplier_quotes(product_id,supplier_name,price_cny,quote_date,
                     screenshot_path,remark,is_adopted) VALUES(?,?,?,?,?,?,0)""",
-                                      (pid, name, price, date, IMG_PREFIX + shot if shot else None,
+                                      (pid, name, price, date, 'uploads/' + shot if shot else None,
                                        _txt(d.get('remark')) or None)).lastrowid
                 if d.get('is_adopted'):
                     self._adopt(qid)
         except Exception:
-            images.remove_file(self.dir, shot)
+            rawimg.remove_file(self.dir, shot)
             raise
         return qid
 
@@ -340,4 +416,4 @@ class SupplierService:
             raise ApiError('供应商报价不存在', 404)
         self.db.execute('DELETE FROM supplier_quotes WHERE id=?', (qid,))
         if q['screenshot_path']:
-            images.remove_file(self.dir, os.path.basename(q['screenshot_path']))
+            rawimg.remove_file(self.dir, os.path.basename(q['screenshot_path']))

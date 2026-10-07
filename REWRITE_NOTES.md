@@ -15,9 +15,10 @@
 app/main.py              入口
 app/sinlux/core/         db(外键开启+事务) schema migrations http(路由/安全) backup
 app/sinlux/customers/    service intake xlsx_io enrich routes
-app/sinlux/products/     seeds catalog(类目/SKU) rates pricing(建议价/价格历史) service(产品/供应商/合并) routes
+app/sinlux/products/     seeds catalog(类目/SKU) rates(中行汇率+定时) pricing(建议价/价格历史) media(相册/文档) service(产品/供应商/合并/复制) routes
+app/sinlux/core/imaging.py  产品图自动规范化（Pillow）
 app/static/              index.html + css + js/(lib, main, pages/*)  —— 原单文件 HTML 已拆分
-tests/                   unittest（124项）+ browser_e2e.py（Playwright 无头浏览器）
+tests/                   unittest（184项）+ browser_e2e.py（Playwright 无头浏览器）
 ```
 运行测试：`python -m unittest discover -s tests`；浏览器测试：`python tests/browser_e2e.py`（需 `pip install playwright` + chromium，仅开发用）。
 
@@ -52,3 +53,14 @@ tests/                   unittest（124项）+ browser_e2e.py（Playwright 无�
 - 浏览器测试里被前面步骤删掉的测试数据不能再引用（客户 4 被删后再关联会失败）。
 - 同一 `root.addEventListener('click')` 每次渲染都叠加会导致重复触发，统一用 `root.onclick =` 并在切页时清空。
 - 测试里共享状态的 legacy 库类要拆成独立类，否则按字母序执行的用例会互相污染。
+
+## 第二批增强（汇率 / 产品页布局 / SKU / 图片）
+1. 汇率：默认自动模式，抓取中国银行「美元·现汇买入价」（人民币/100美元），汇率 = 100 ÷ 买入价。启动 15 秒后抓一次，之后每 2 小时一次（失败 30 分钟重试），同一发布日期只保留最新一条（rate_history）。**未在真实 BOC 页面上验证**（沙箱无法访问），解析器按已知页面结构+固定样本测试；抓不到时保留旧汇率并在界面显示原因，也可手动填「中行牌价」或汇率。
+2. 产品页：身份栏（缩略图/SKU/状态/保存·复制·删除）+ 左侧吸顶（相册、价格摘要）+ 右侧 7 个页签。products 新增列：status/unit/brand/series/hs_code/origin/pcs_per_carton/carton_l·w·h/gross_weight/net_weight；新表 product_images / product_files / rate_history。
+3. SKU：沿用 <类目前缀><子类前缀><6位序号>。预置 灯饰 SL（20 个子类）、家具 GL（25 个，含酒店 FF&E 品类）、装饰材料 DC（15 个）、其他 OT；选子类后自动编号；完整前缀全局唯一校验；种子只补不覆盖，选项只并入不删除。
+4. 图片：上传→暂存→保存产品时认领；任何格式（JPEG/PNG/WebP/GIF/BMP/TIFF/AVIF）自动 EXIF 转正、透明铺白、纯色背景（含灰/彩影棚底）换白并裁到产品、居中放进 1600×1600 白底（四周留 6%），另出 480 缩略图；实景/渐变背景只等比放入不裁；分辨率偏低有提示。Pillow 不可用时原样保存，页面用 CSS 居中显示。旧图可在产品库「维护 ▾ → 统一旧图片规格」一键规范。
+## 记忆（踩坑）
+- Windows 的 Pillow（libs/PIL 里是 .pyd）在 Linux 上导不进；main.py 在 Windows 优先用内置 libs，其它系统把内置 libs 放最后。
+- 纯色背景去除不能全图替换颜色，只处理"从四角连通进来"的背景，否则产品内部同色镂空会被误刷。连通域在 ≤500px 的缩略图上做，保证 1200 万像素图也很快。
+- 15/16 位灰度 PNG 读出来是 I;16，需要 /256 缩到 8 位；测试数据本身也要真的是 16 位。
+- 页签状态是模块变量，换产品要重置，否则"新建产品"可能停在上一次的隐藏页签里。

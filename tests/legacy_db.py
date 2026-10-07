@@ -8,6 +8,8 @@ notes/reminders/enrichments 无外键，price_history 无外键。
 import os
 import sqlite3
 
+from imgutil import png_bytes
+
 OLD_SCHEMA = """
 CREATE TABLE IF NOT EXISTS customers(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +146,10 @@ def build_legacy_db(data_dir, n_customers=30, very_old=False):
         else:
             c.execute('INSERT INTO products(sku,name,category_id,cost,cost_currency,suggested_price,spec_text) VALUES(?,?,?,?,?,?,?)',
                       (sku, name, cat, cost, cur, cost * 1.3, '规格描述 ' + sku))
+    os.makedirs(os.path.join(data_dir, 'uploads'), exist_ok=True)
+    with open(os.path.join(data_dir, 'uploads', 'legacyimg1.png'), 'wb') as f:        # 旧版：原样保存的上传图
+        f.write(png_bytes(300, 200, box=(100, 60, 200, 140)))
+    c.execute("UPDATE products SET image_path='uploads/legacyimg1.png' WHERE id=1")
     c.execute("INSERT INTO product_field_values(product_id,field_id,value) VALUES(1,1,'10')")
     c.execute("INSERT INTO supplier_quotes(product_id,supplier_name,price_cny,is_adopted) VALUES(1,'供应商甲',12.5,1),(1,'供应商乙',13.0,0)")
     if not very_old:
