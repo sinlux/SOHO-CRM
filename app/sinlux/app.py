@@ -13,6 +13,9 @@ from .products.pricing import PriceHistory
 from .products.media import MediaStore
 from .products.rates import RateService, RateScheduler
 from .products.service import ProductService, SupplierService
+from .imports import routes as import_routes
+from .imports.pi_import import PiImporter
+from .imports.product_import import ProductImporter
 from .quotes.exporter import QuoteExporter
 from .quotes.service import QuoteService
 from .quotes.settings import QuoteSettings
@@ -63,6 +66,8 @@ class Context:
         self.quote_export = QuoteExporter(self.db, self.quote_settings, self.exports_dir, self.uploads_dir)
         self.importer = CustomerImporter(self.db, self.customers, os.path.join(self.import_tmp, 'customers'))
         self.importer.cleanup_old()
+        self.product_import = ProductImporter(self.db, self.products, self.catalog, self.media, os.path.join(self.import_tmp, 'products'))
+        self.pi_import = PiImporter(self.db, self.products, self.quotes, self.customers, self.history, self.catalog, os.path.join(self.import_tmp, 'pi'))
         self.enricher = Enricher(self.db, self.customers, net)
         self.version = read_version()
         self.scheduler = None
@@ -86,6 +91,7 @@ def build_router():
     customer_routes.register(r)
     product_routes.register(r)
     quote_routes.register(r)
+    import_routes.register(r)
     return r
 
 

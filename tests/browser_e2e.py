@@ -609,6 +609,53 @@ def main():
         page.wait_for_url('**#quotes')
         check('删除报价单（确认框）', ctx.db.scalar('SELECT COUNT(*) FROM quotes WHERE quote_no=?', (qno2,)) == 0 and dialogs)
 
+        # ---------- 产品 Excel 导入向导 + PI 导入 ----------
+        print('产品导入 / PI 导入')
+        from test_imports import make_pi, make_products_xlsx
+        from imgutil import PNG_RED_BOX
+        xp = os.path.join(tmp, 'products_e2e.xlsx')
+        open(xp, 'wb').write(make_products_xlsx([[1, None, 'E2E-IMP-1', 'Imported lamp', 18.5, 'CNY', 200, '甲厂', '12W', 'Black'],
+                                                 [2, None, 'E2E-IMP-2', 'Imported lamp 2', 22, 'CNY', 100, '乙厂', '9W', 'White'],
+                                                 [3, None, 'E2E-IMP-3', 'Skipped one', 5, 'CNY', None, None, None, None]], images={3: PNG_RED_BOX, 4: PNG_RED_BOX}))
+        page.click('a[data-v=pimport]')
+        page.wait_for_selector('#file')
+        page.set_input_files('#file', xp)
+        page.click('#btnUp')
+        page.wait_for_selector('#selSheet')
+        check('向导第2步：列出工作表', page.eval_on_selector_all('#selSheet option', 'o => o.map(x => x.value)') == ['货盘', '空表'])
+        page.fill('#hdrRow', '2'); page.click('#btnReload')
+        page.wait_for_function("document.querySelector('#hdrRow').value === '2' && document.body.innerText.includes('表头 10 列')")
+        check('选表头行后显示原始预览', 'E2E-IMP-1' in page.inner_text('.scroll'))
+        page.click('#btnNext'); page.wait_for_selector('#selCat')
+        page.click('#btnNext'); page.wait_for_selector('select[data-h]')
+        check('列映射页：自动猜测 款号→SKU', page.eval_on_selector('select[data-h="2"]', 's => s.value') == '__sku')
+        page.click('#btnNext'); page.wait_for_selector('.prow')
+        check('逐行预览：3 行、2 张带图', page.locator('.prow').count() == 3 and page.locator('.prow img').count() == 2)
+        shot('11_product_import_preview')
+        page.uncheck('[data-inc="5"]')
+        check('取消勾选后统计变化', '将导入 2 行' in page.inner_text('#selInfo'))
+        page.click('#btnApply')
+        page.wait_for_selector('#btnGo')
+        check('导入完成：新建 2，跳过 1', '新建 2，更新 0，跳过 1，失败 0' in page.inner_text('.card'))
+        check('产品已写入且带图', ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku IN ('E2E-IMP-1','E2E-IMP-2')") == 2
+              and ctx.db.scalar("SELECT COUNT(*) FROM product_images i JOIN products p ON p.id=i.product_id WHERE p.sku='E2E-IMP-1'") == 1
+              and ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='E2E-IMP-3'") == 0)
+
+        pip = os.path.join(tmp, 'e2e_pi.xls')
+        open(pip, 'wb').write(make_pi(invoice='SL-E2E-US', buyer=('Fake Company 7 Ltd', 'X', '', 'nobody@nowhere.test', '')))
+        page.click('a[data-v=piimport]')
+        page.wait_for_selector('#files')
+        page.set_input_files('#files', pip)
+        page.click('#btnUp')
+        page.wait_for_selector('[data-pi]')
+        check('PI 预览：解析出 PI 号和 3 行明细', 'SL-E2E-US' in page.inner_text('[data-pi]') and page.locator('[data-pi] tbody tr, [data-pi] table tr').count() >= 4)
+        check('PI 预览：匹配到已有客户（公司名）', '已匹配' in page.inner_text('[data-pi]'))
+        shot('12_pi_import_preview')
+        page.click('[data-apply="0"]')
+        page.wait_for_function("document.body.innerText.includes('导入完成')")
+        check('PI 导入：成交单、产品、客户阶段', ctx.db.scalar("SELECT status FROM quotes WHERE quote_no='SL-E2E-US'") == 'accepted'
+              and ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='CSL-10100'") == 1)
+
         # ---------- 路由容错 ----------
         page.goto(base + '/#customer/999999')
         page.wait_for_selector('text=客户不存在')

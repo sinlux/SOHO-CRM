@@ -27,6 +27,23 @@ export async function upload(url, file) {
   return data;
 }
 
+// 大文件上传：带进度（fetch 拿不到上传进度，这里用 XHR）
+export function uploadProgress(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', url);
+    x.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+    x.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let data;
+      try { data = JSON.parse(x.responseText); } catch (e) { data = {error: '服务器返回了无法解析的内容'}; }
+      x.status >= 200 && x.status < 300 ? resolve(data) : reject(new ApiError(data, x.status));
+    };
+    x.onerror = () => reject(new ApiError({error: '上传失败：连接中断'}, 0));
+    x.send(file);
+  });
+}
+
 let toastTimer;
 export function toast(msg) {
   const t = $('#toast');

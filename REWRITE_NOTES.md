@@ -19,7 +19,7 @@ app/sinlux/products/     seeds catalog(类目/SKU) rates(中行汇率+定时) pr
 app/sinlux/core/imaging.py  产品图自动规范化（Pillow）
 app/sinlux/quotes/       service(创建/编辑/状态联动) exporter(PDF/Excel/WhatsApp) settings(抬头+模板) routes
 app/static/              index.html + css + js/(lib, main, pages/*)  —— 原单文件 HTML 已拆分
-tests/                   unittest（221项）+ browser_e2e.py（Playwright 无头浏览器）
+tests/                   unittest（233项）+ browser_e2e.py（Playwright 无头浏览器）
 ```
 运行测试：`python -m unittest discover -s tests`；浏览器测试：`python tests/browser_e2e.py`（需 `pip install playwright` + chromium，仅开发用）。
 
@@ -94,3 +94,12 @@ tests/                   unittest（221项）+ browser_e2e.py（Playwright 无�
 - 用户 SVG 里的字体（Fraunces / Hanken Grotesk）系统没有 → 从 npm `@expo-google-fonts/*` 取静态 TTF，用 Chromium 以 4 倍分辨率渲染成透明 PNG（1509×304）再裁边，存为 `app/assets/logo.png`；后台侧边栏和报价单共用（侧边栏窄屏时回退成小图标）。
 - 报价单主色改为 LOGO 的深蓝 #1F3A5F + 金色 #B8942A。
 - 收款信息默认值按用户文字版更新（`CO.,LTD`、`NO.21 TIYU ROAD`；全角逗号改为半角）。已在设置页保存过旧值的电脑需手动改一次。
+
+## 第四批（Excel 产品导入 + PI 导入）
+- 代码：`app/sinlux/imports/`（xlsx_images 图片/表头读取、product_import 向导会话、pi_import PI 解析与写入、routes）；前端 `product_import.js` / `pi_import.js`；`QuoteService.create_imported` 用于 PI 成交单；xlrd 已放入 `app/libs`（纯 Python，只读 .xls）。
+- 行为：会话只在内存，文件/图片在 `data/import_tmp/products/<会话>`，程序启动时清掉遗留；预览阶段完全只读；单行出错不拖垮整批，失败行会列出原因；PI 整张在一个事务里，任何一行出错整张回滚。
+- 决定（与第三批一致）：PI 的成交价写入售价历史（带客户、PI 日期、PI 号），但**不覆盖产品建议价**（建议价按「成本×汇率×(1+利润率)」重算）——`PriceHistory.realign(use_sell=False)`；手动添加的售价记录仍沿用旧逻辑（对齐最新售价）。
+- 币种：PI 成本固定 CNY；产品表里的币种列只认 CNY/USD（含 RMB/¥/人民币/$/美元别名），别的币种提醒并退回统一币种。
+- 规格描述：产品表导入对已有 SKU 在有值时覆盖；PI 导入只在规格为空时填充。新建产品才应用统一利润率。
+- 踩坑：测试里 X-Filename 头必须 URL 编码（中文文件名）；xlwt 仅测试用（`pip install xlwt`），生产不需要；路由 `header_row=0` 不能用 `or 1` 兜底（会把 0 吞成 1）。
+- 未验证：真实 166MB 首饰表、真实 SINLUX PI（云端只有按文档模板造的假 PI）；Windows 上的 .xls 读取。

@@ -254,16 +254,45 @@ class QuoteService:
             if status in ('accepted', 'rejected'):
                 self.customers.add_system_note(q['customer_id'], '【报价单 %s】%s%s' % (q['quote_no'], STATUS_LABELS[status], '：' + fb if fb else ''))
 
+    def create_imported(self, quote_no, customer_id, currency, date, items, notes=''):
+        """导入已成交的历史单据（PI）：单号沿用原单号，创建日期=单据日期，状态直接是已成交；
+        成交价按单据日期写入售价历史（来源=单号），客户阶段按"有无其它成交单"推进。items 里可含运费等非产品行。"""
+        quote_no = _txt(quote_no, 60, '单号')
+        if not quote_no:
+            raise ApiError('单号为空')
+        if self.db.one('SELECT 1 FROM quotes WHERE quote_no=?', (quote_no,)):
+            raise ApiError('单号 %s 已存在' % quote_no, 409)
+        cust = self.customers.require(int(customer_id))
+        if currency not in CURRENCIES:
+            raise ApiError('币种无效，可选：' + '/'.join(CURRENCIES))
+        lines, total = [], D(0)
+        for n, i in enumerate(items, 1):
+            qty = _num(i.get('quantity'), '第%d行数量' % n, positive=True)
+            price = _num(i.get('unit_price'), '第%d行单价' % n, lo=0)
+            lines.append({'product_id': i.get('product_id'), 'sku': _txt(i.get('sku'), 64), 'name': _txt(i.get('name'), 200, '名称'),
+                          'spec': _txt(i.get('spec'), 4000, '规格'), 'quantity': qty, 'unit': _txt(i.get('unit') or 'pcs', 20),
+                          'unit_price': price, 'remark': ''})
+            total += line_amount(qty, price)
+        if not lines:
+            raise ApiError('没有可导入的明细')
+        with self.db.tx():
+            ts = date + ' 00:00:00'
+            qid = self.db.execute("""INSERT INTO quotes(quote_no,customer_id,currency,status,valid_days,notes,total,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""", (quote_no, cust['id'], currency, 'accepted', 0, notes, float(total), ts, now())).lastrowid
+            self._write_items(qid, lines)
+            self._on_accept(self._row(qid), date)
+        return {'id': qid, 'quote_no': quote_no, 'total': float(total), 'items': len(lines)}
+
     def _promote_quoted(self, cid):
         self.db.execute("UPDATE customers SET stage='已报价', updated_at=? WHERE id=? AND COALESCE(stage,'') IN ('','潜在','已联系','沉睡')",
                         (now(), cid))
 
-    def _on_accept(self, q):
+    def _on_accept(self, q, date=None):
         """成交：明细写入售价历史（先清掉本报价单之前写过的，保证重复触发也只有一份）；客户阶段推进。"""
         self._drop_history(q)
         for i in self.db.query('SELECT product_id, unit_price FROM quote_items WHERE quote_id=? AND product_id IS NOT NULL', (q['id'],)):
             self.history.record(i['product_id'], 'sell', i['unit_price'], q['currency'], customer_id=q['customer_id'],
-                                effective_date=today(), source=q['quote_no'], note='报价单成交')
+                                effective_date=date or today(), source=q['quote_no'], note='报价单成交')
         others = self.db.scalar("SELECT COUNT(*) FROM quotes WHERE customer_id=? AND status='accepted' AND id<>?", (q['customer_id'], q['id']))
         stage = '复购' if others else '成交'
         self.db.execute('UPDATE customers SET stage=?, updated_at=? WHERE id=?', (stage, now(), q['customer_id']))

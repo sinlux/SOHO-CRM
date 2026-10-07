@@ -109,15 +109,16 @@ class PriceHistory:
         return r['product_id']
 
     # ---------- 对齐：产品当前价 = 最新历史记录 ----------
-    def realign(self, product_id):
+    def realign(self, product_id, use_sell=True):
         """当前成本 ← 日期最新的成本记录；建议价 ← 最新售价记录，没有售价记录则按公式由成本算出。
+        use_sell=False：只对齐成本，建议价仍按公式（PI 导入用：PI 成交价是对单个客户的价，不该当成通用建议价）。
         没有任何成本记录时不动产品现有数据（不凭空清空）。"""
         p = self.db.one('SELECT cost, cost_currency, profit_rate FROM products WHERE id=?', (product_id,))
         if not p:
             return
         lc, ls = self.latest(product_id, 'cost'), self.latest(product_id, 'sell')
         cost, cur = (lc['price'], lc['currency']) if lc else (p['cost'], p['cost_currency'])
-        if ls:
+        if ls and use_sell:
             sug = ls['price']
         else:
             sug = suggest_usd(cost, cur, p['profit_rate'], self.rates.rate())
