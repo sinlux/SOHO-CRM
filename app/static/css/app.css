@@ -22,7 +22,8 @@ body{font-family:var(--font);font-size:15px;line-height:1.55;color:var(--ink);mi
 .sidebar{width:216px;flex:none;position:sticky;top:14px;height:calc(100vh - 28px);display:flex;flex-direction:column;overflow:hidden;
   background:rgba(255,253,248,.72);backdrop-filter:blur(22px) saturate(1.3);-webkit-backdrop-filter:blur(22px) saturate(1.3);
   border:1px solid rgba(255,255,255,.8);border-radius:26px;box-shadow:var(--shadow)}
-.brand{display:flex;align-items:center;gap:10px;padding:22px 20px 14px}
+.brand{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:22px 20px 14px}
+.brand .logo-full{width:100%;max-width:190px;height:auto;display:block}.brand .mini{display:none}.brand .sub{letter-spacing:.2em;font-size:11px;color:var(--ink-2)}
 .brand .logo{width:34px;height:34px;flex:none}
 .brand b{display:block;font-size:18px;letter-spacing:.06em;line-height:1.1}
 .brand small{color:var(--ink-2);font-size:12px;letter-spacing:.2em}
@@ -116,8 +117,8 @@ pre{font-family:inherit}
 /* ---------- 窄屏 ---------- */
 @media (max-width:900px){
   .shell{padding:8px;gap:8px}
-  .sidebar{width:68px}.brand div,.nav-title,nav#nav a span{display:none}
-  .brand{padding:18px 17px 8px}nav#nav a{justify-content:center;padding:11px}
+  .sidebar{width:68px}.brand .logo-full,.brand .sub,.nav-title,nav#nav a span{display:none}
+  .brand .mini{display:block}.brand{padding:18px 17px 8px}nav#nav a{justify-content:center;padding:11px}
   #remBadge{position:absolute;margin:0;transform:translate(14px,-12px)}nav#nav a{position:relative}
   .topbar h1{font-size:20px}.btn-new{display:none}
 }

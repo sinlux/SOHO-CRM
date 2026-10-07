@@ -89,3 +89,8 @@ tests/                   unittest（221项）+ browser_e2e.py（Playwright 无�
 - 字体：Nunito（Medium/SemiBold/Bold/ExtraBold，OFL，`app/static/fonts/nunito/`）直接由 reportlab 嵌入 PDF，不需要安装到系统。Nunito 没有汉字，中文片段用 `_mix()` 套 `<font name=中文字体>`。
 - 踩坑：reportlab `ParagraphStyle` 的 lambda 里同时给默认 fontName 和 kw 会重复关键字 → 合并 dict；页宽可用 = 182mm − 框架内边距，表格总宽别超 176mm，否则居中后左缘与段落错位；Playwright 在这个云环境要用 `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`。
 - 未验证：Windows 上的 PDF 中文字体实际效果；Excel 在没装 Nunito 的电脑上会回退默认字体（数据不受影响）。未做 Windows 自动装字体（PDF 用的是打包字体，不需要）。
+
+## LOGO 换成用户提供的 SVG
+- 用户 SVG 里的字体（Fraunces / Hanken Grotesk）系统没有 → 从 npm `@expo-google-fonts/*` 取静态 TTF，用 Chromium 以 4 倍分辨率渲染成透明 PNG（1509×304）再裁边，存为 `app/assets/logo.png`；后台侧边栏和报价单共用（侧边栏窄屏时回退成小图标）。
+- 报价单主色改为 LOGO 的深蓝 #1F3A5F + 金色 #B8942A。
+- 收款信息默认值按用户文字版更新（`CO.,LTD`、`NO.21 TIYU ROAD`；全角逗号改为半角）。已在设置页保存过旧值的电脑需手动改一次。

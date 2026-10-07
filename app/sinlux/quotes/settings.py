@@ -14,9 +14,9 @@ LIMITS = {'company_name': 100, 'contact_name': 60, 'company_email': 120, 'compan
 # 首次使用的默认值（来自用户提供的资料）。只在该键从未保存过时生效；用户清空后保存即为空，不会再被默认值顶回来。
 DEFAULTS = {'company_name': 'SINLUX', 'contact_name': 'jun', 'company_email': 'jun@sinluxlight.com', 'company_phone': '+86-18938260518',
             'company_address': 'No.42 Zhan Qian Road,Chashan Town, Dongguan City, China',
-            'bank_account_number': '559000017172230', 'bank_name': 'BANK OF DONGGUAN CO..LTD', 'bank_swift': 'DGCBCN22',
+            'bank_account_number': '559000017172230', 'bank_name': 'BANK OF DONGGUAN CO.,LTD', 'bank_swift': 'DGCBCN22',
             'bank_account_name': 'DGDL SINLUX MYSH',
-            'bank_address': 'BANK OF DONGGUAN BUILDING,NO.21TIYUROAD, GUANCHENG DIST,DONGGUAN CITY,GUANGDONGPROVINCE,CHINA',
+            'bank_address': 'BANK OF DONGGUAN BUILDING,NO.21 TIYU ROAD, GUANCHENG DIST,DONGGUAN CITY,GUANGDONGPROVINCE,CHINA',
             'show_bank': '1'}
 LOGO_KEY = 'company_logo'
 BUILTIN_LOGO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'assets', 'logo.png')

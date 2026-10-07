@@ -16,7 +16,7 @@ export async function render(root, _arg, isCurrent) {
 
     <div class="card"><h2>报价单抬头 / 收款信息 / WhatsApp 模板</h2>
       <p class="muted" style="margin-bottom:10px">抬头和联系方式印在报价单 PDF / Excel 的顶部和页脚；收款信息单独成框，印在条款下方。</p>
-      <div class="flex" style="margin-bottom:12px"><img id="logoImg" src="/api/settings/quote/logo?t=${Date.now()}" alt="LOGO" style="height:48px;max-width:200px;object-fit:contain;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff">
+      <div class="flex" style="margin-bottom:12px"><img id="logoImg" src="/api/settings/quote/logo?t=${Date.now()}" alt="LOGO" style="height:52px;max-width:260px;object-fit:contain;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff">
         <input type="file" id="logoFile" accept="image/*" style="display:none"><button id="btnLogo">更换 LOGO</button>${qs.logo_custom ? '<button id="btnLogoReset">恢复默认 LOGO</button>' : ''}
         <span class="muted">建议用背景干净的 PNG；背景色会自动去掉。</span></div>
       <div class="grid"><div class="field"><label for="qName">公司名称</label><input id="qName" value="${esc(qs.company_name)}" placeholder="SINLUX"></div>

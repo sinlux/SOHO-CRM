@@ -8,8 +8,8 @@ from xml.sax.saxutils import escape
 from ..core.util import ApiError
 from .settings import render_template
 
-BRAND = '#173C37'          # 与 LOGO 的深绿一致
-ACCENT = '#2D8CC8'         # 与 LOGO 的蓝色一致
+BRAND = '#1F3A5F'          # 与 LOGO 的深蓝一致
+ACCENT = '#B8942A'         # 与 LOGO 的金色一致
 _FONTS = {}
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'static', 'fonts', 'nunito')
 _CJK = re.compile(r'([\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]+)')
@@ -152,7 +152,7 @@ class QuoteExporter:
             try:
                 from reportlab.lib.utils import ImageReader
                 iw, ih = ImageReader(lp).getSize()
-                w = 50 * mm
+                w = 64 * mm
                 logo = Image(lp, width=w, height=w * ih / iw)
             except Exception:
                 logo = ''
@@ -166,7 +166,7 @@ class QuoteExporter:
                 right.append('<font name="%s">%s:</font> %s' % (bold, lab, _para(co[key])))
         if co['address']:
             right.append('<font name="%s">Add:</font> %s' % (bold, _para(co['address'])))
-        head = Table([[logo, P('<br/>'.join(right), S(8.3, alignment=2, textColor=colors.HexColor('#444444')))]], colWidths=[68 * mm, 108 * mm])
+        head = Table([[logo, P('<br/>'.join(right), S(8.3, alignment=2, textColor=colors.HexColor('#444444')))]], colWidths=[78 * mm, 98 * mm])
         head.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('LEFTPADDING', (0, 0), (0, 0), 0), ('RIGHTPADDING', (-1, 0), (-1, 0), 0),
                                   ('LINEBELOW', (0, 0), (-1, 0), 1.2, brand), ('BOTTOMPADDING', (0, 0), (-1, -1), 7)]))
         story = [head, Spacer(1, 5 * mm), P('QUOTATION', ParagraphStyle('q', fontName=F['title'], fontSize=17, leading=21, textColor=brand)), Spacer(1, 2.5 * mm)]
@@ -209,7 +209,7 @@ class QuoteExporter:
             ('BACKGROUND', (0, 0), (-1, 0), brand), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('GRID', (0, 0), (-1, -2), 0.4, colors.HexColor('#D8D8D8')), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (4, 0), (-1, -1), 'RIGHT'), ('ALIGN', (0, 0), (0, -1), 'CENTER'), ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F5F8F7')]),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F6F7FA')]),
             ('FONTNAME', (6, -1), (-1, -1), F['title']), ('FONTSIZE', (6, -1), (-1, -1), 10.5), ('TEXTCOLOR', (6, -1), (-1, -1), brand),
             ('LINEABOVE', (0, -1), (-1, -1), 1, brand), ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4)]))
         story += [t, Spacer(1, 5 * mm)]
@@ -221,8 +221,8 @@ class QuoteExporter:
             brow = [[P(B('Payment Information'), S(9.5, textColor=brand)), '']] + \
                    [[P(B(lab), ps), P(_para(val), ps)] for lab, val in co['bank']]
             bt = Table(brow, colWidths=[34 * mm, 142 * mm])
-            bt.setStyle(TableStyle([('SPAN', (0, 0), (1, 0)), ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F5F8F7')),
-                                    ('LINEBELOW', (0, 0), (-1, 0), 0.8, brand), ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#CFD9D6')),
+            bt.setStyle(TableStyle([('SPAN', (0, 0), (1, 0)), ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F6F7FA')),
+                                    ('LINEBELOW', (0, 0), (-1, 0), 0.8, brand), ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#D3D9E3')),
                                     ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 2.5), ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
                                     ('LEFTPADDING', (0, 0), (-1, -1), 7)]))
             story += [Spacer(1, 5 * mm), KeepTogether([bt])]
@@ -242,7 +242,7 @@ class QuoteExporter:
         ws.title = 'Quotation'
         thin = Side(style='thin', color='D8D8D8')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        green = '173C37'
+        green = '1F3A5F'
 
         def put(ref, value, **font):
             c = ws[ref]
@@ -261,7 +261,7 @@ class QuoteExporter:
             with PImg0.open(lp) as im0:
                 lw, lh = im0.size
             xl = XImg0(lp)
-            xl.width, xl.height = 150, round(150 * lh / lw)
+            xl.width, xl.height = 200, round(200 * lh / lw)
             ws.add_image(xl, 'A1')
             ws.row_dimensions[1].height = max(48, xl.height * 0.75 + 4)
             has_logo = True
@@ -333,7 +333,7 @@ class QuoteExporter:
             ws.merge_cells('A%d:I%d' % (r, r))
             c = ws.cell(row=r, column=1, value='Payment Information')
             c.font = Font(name=XFONT, bold=True, color=green, size=11)
-            c.fill = PatternFill('solid', start_color='F5F8F7')
+            c.fill = PatternFill('solid', start_color='F6F7FA')
             r += 1
             for lab, val in co['bank']:
                 ws.merge_cells('A%d:C%d' % (r, r)); ws.merge_cells('D%d:I%d' % (r, r))
@@ -341,7 +341,7 @@ class QuoteExporter:
                 b = ws.cell(row=r, column=4, value=val); b.font = Font(name=XFONT, size=10); b.alignment = Alignment(wrap_text=True, vertical='top')
                 b.data_type = 's'
                 for cc in (1, 4):
-                    ws.cell(row=r, column=cc).fill = PatternFill('solid', start_color='F5F8F7')
+                    ws.cell(row=r, column=cc).fill = PatternFill('solid', start_color='F6F7FA')
                 r += 1
         for col, w in zip('ABCDEFGHI', [5, 11, 16, 34, 40, 8, 8, 14, 14]):
             ws.column_dimensions[col].width = w
