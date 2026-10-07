@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SINLUX 客户管理</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header>
+  <h1>SINLUX 客户管理</h1>
+  <nav id="nav">
+    <a href="#list" data-v="list">客户列表</a>
+    <a href="#add" data-v="add">＋录入客户</a>
+    <a href="#reminders" data-v="reminders">跟进提醒<span id="remBadge"></span></a>
+    <a href="#import" data-v="import">Excel导入</a>
+    <a href="#settings" data-v="settings">设置</a>
+  </nav>
+</header>
+<main id="app"></main>
+<div id="modal"><div class="inner" id="modalBody"></div></div>
+<div class="toast" id="toast"></div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
