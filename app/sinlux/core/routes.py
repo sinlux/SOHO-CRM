@@ -101,9 +101,10 @@ def register(r):
         path = os.path.join(ctx.updater.tmp, token)
         if not os.path.isfile(path):
             raise ApiError('升级包已过期，请重新上传', 404)
+        db_backup = backup.make_backup(ctx.db, ctx.data_dir, ctx.backups_dir)      # 升级前先备份数据：万一新版改了数据库结构，回退代码时还能退回数据
         res = ctx.updater.apply(path)
         os.remove(path)
-        return {'ok': True, **res}
+        return {'ok': True, **res, 'data_backup': db_backup['file']}
 
     @r.get('/api/update/versions')
     def update_versions(ctx, req):
@@ -111,7 +112,9 @@ def register(r):
 
     @r.post('/api/update/rollback')
     def update_rollback(ctx, req):
-        return {'ok': True, **ctx.updater.rollback(req.json().get('name'))}
+        name = req.json().get('name')
+        db_backup = backup.make_backup(ctx.db, ctx.data_dir, ctx.backups_dir)
+        return {'ok': True, **ctx.updater.rollback(name), 'data_backup': db_backup['file']}
 
     @r.get('/api/dashboard')
     def dashboard(ctx, req):

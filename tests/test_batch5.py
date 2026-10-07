@@ -256,6 +256,7 @@ class TestUpdateApi(AppTestCase):
         self.assertEqual(open(os.path.join(self.root, 'app', 'main.py')).read(), 'old')            # 上传只做校验
         st, r = self.c.post('/api/update/apply', {'token': info['token']})
         self.assertEqual((st, r['applied_version'], r['need_restart']), (200, '2.0.0', True))
+        self.assertTrue(os.path.exists(os.path.join(self.ctx.backups_dir, r['data_backup'])))      # 升级前自动备份了数据
         self.assertEqual(open(os.path.join(self.root, 'app', 'main.py')).read(), 'new')
         self.assertEqual(self.c.post('/api/update/apply', {'token': info['token']})[0], 404)       # 包用完即删
         vs = self.c.get('/api/update/versions')[1]
