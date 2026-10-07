@@ -5,9 +5,11 @@ import * as customer from './pages/customer.js';
 import * as reminders from './pages/reminders.js';
 import * as imp from './pages/import.js';
 import * as settings from './pages/settings.js';
+import * as products from './pages/products.js';
+import * as product from './pages/product.js';
 
-const PAGES = {list, add, customer, reminders, import: imp, settings};
-const TITLES = {list: '客户列表', add: '录入客户', customer: '客户详情', reminders: '跟进提醒', import: 'Excel 导入', settings: '设置'};
+const PAGES = {list, add, customer, reminders, import: imp, settings, products, product};
+const TITLES = {list: '客户列表', add: '录入客户', customer: '客户详情', reminders: '跟进提醒', import: 'Excel 导入', settings: '设置', products: '产品库', product: '产品详情'};
 let seq = 0;
 
 async function route() {
@@ -15,10 +17,11 @@ async function route() {
   const [view, arg] = h.split('/');
   const page = PAGES[view] || list;
   $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === (PAGES[view] ? view : 'list')
-    || (view === 'customer' && a.dataset.v === 'list')));
+    || (view === 'customer' && a.dataset.v === 'list') || (view === 'product' && a.dataset.v === 'products')));
   $('#pageTitle').textContent = TITLES[PAGES[view] ? view : 'list'];
   const mine = ++seq;                    // 页面异步加载期间用户又点了别处，则丢弃旧结果
   const root = $('#app');
+  root.onclick = null;                  // 各页面自己绑定点击代理；切页时先清掉上一页的
   try {
     await page.render(root, arg, () => mine === seq);
   } catch (e) {

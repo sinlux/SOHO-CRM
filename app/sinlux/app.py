@@ -7,6 +7,11 @@ from .core.http import Router, make_server
 from .customers.service import CustomerService
 from .customers.xlsx_io import CustomerImporter
 from .customers.enrich import Enricher
+from .products import catalog as catalog_mod
+from .products.catalog import CatalogService
+from .products.pricing import PriceHistory
+from .products.rates import RateService
+from .products.service import ProductService, SupplierService
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
@@ -28,7 +33,7 @@ def read_version():
 class Context:
     """路由处理函数拿到的共享上下文。"""
 
-    def __init__(self, data_dir, net=None):
+    def __init__(self, data_dir, net=None, rate_fetcher=None):
         self.data_dir = os.path.abspath(data_dir)
         self.images_dir = os.path.join(self.data_dir, 'images')
         self.uploads_dir = os.path.join(self.data_dir, 'uploads')
@@ -39,6 +44,12 @@ class Context:
             os.makedirs(d, exist_ok=True)
         self.db = dbmod.Database(os.path.join(self.data_dir, 'crm.db'))
         self.migration_report = migrations.migrate(self.db)
+        catalog_mod.ensure_seeds(self.db)
+        self.catalog = CatalogService(self.db)
+        self.rates = RateService(self.db, rate_fetcher)
+        self.history = PriceHistory(self.db, self.rates)
+        self.products = ProductService(self.db, self.uploads_dir, self.rates, self.history, self.catalog)
+        self.suppliers = SupplierService(self.db, self.uploads_dir, self.products, self.history)
         self.customers = CustomerService(self.db, self.images_dir)
         self.importer = CustomerImporter(self.db, self.customers, os.path.join(self.import_tmp, 'customers'))
         self.importer.cleanup_old()
@@ -51,14 +62,16 @@ class Context:
 
 def build_router():
     from .customers import routes as customer_routes
+    from .products import routes as product_routes
     from .core import routes as core_routes
     r = Router()
     core_routes.register(r)
     customer_routes.register(r)
+    product_routes.register(r)
     return r
 
 
-def create_app(data_dir=None, port=8123, net=None):
-    ctx = Context(data_dir or default_data_dir(), net)
+def create_app(data_dir=None, port=8123, net=None, rate_fetcher=None):
+    ctx = Context(data_dir or default_data_dir(), net, rate_fetcher)
     server = make_server(ctx, build_router(), STATIC_DIR, port)
     return ctx, server

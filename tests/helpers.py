@@ -84,7 +84,13 @@ class AppTestCase(unittest.TestCase):
         if cls.legacy:
             cls.legacy_summary = cls.legacy(cls.data_dir)
         cls.net = FakeNet()
-        cls.ctx, cls.server = create_app(cls.data_dir, port=0, net=cls.net)
+        cls.rate_result = 0.14           # 测试里在线汇率的"返回值"；设成异常实例则模拟网络失败
+
+        def fake_rate():
+            if isinstance(cls.rate_result, Exception):
+                raise cls.rate_result
+            return cls.rate_result
+        cls.ctx, cls.server = create_app(cls.data_dir, port=0, net=cls.net, rate_fetcher=fake_rate)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.port = cls.server.server_address[1]
@@ -102,3 +108,15 @@ class AppTestCase(unittest.TestCase):
         st, r = self.c.post('/api/customers', kw)
         self.assertEqual(st, 200, r)
         return r['id']
+
+    def new_product(self, **kw):
+        cats = {c['code']: c['id'] for c in self.c.get('/api/categories')[1]['categories']}
+        kw.setdefault('category_id', cats['lighting'])
+        kw.setdefault('sku', 'T-%d' % self.ctx.db.scalar('SELECT COALESCE(MAX(id),0)+1 FROM products'))
+        kw.setdefault('name', 'Test product')
+        st, r = self.c.post('/api/products', kw)
+        self.assertEqual(st, 200, r)
+        return r['id']
+
+    def cat_id(self, code):
+        return {c['code']: c['id'] for c in self.c.get('/api/categories')[1]['categories']}[code]

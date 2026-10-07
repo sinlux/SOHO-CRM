@@ -162,6 +162,19 @@ CREATE TABLE IF NOT EXISTS supplier_quotes(
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_supplier_quotes_product ON supplier_quotes(product_id);
+CREATE TABLE IF NOT EXISTS category_sku_prefixes(
+  category_id INTEGER PRIMARY KEY,
+  prefix TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS subcategory_prefixes(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL,
+  subcategory_value TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(category_id, subcategory_value),
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS app_settings(
   key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 """
@@ -174,4 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(done, due_date);
 CREATE INDEX IF NOT EXISTS idx_enrichments_customer ON enrichments(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_lv ON customers(lv);
 CREATE INDEX IF NOT EXISTS idx_quotes_customer ON quotes(customer_id);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_price_history_product ON price_history(product_id, price_type, effective_date);
+CREATE INDEX IF NOT EXISTS idx_quote_items_product ON quote_items(product_id);
 """

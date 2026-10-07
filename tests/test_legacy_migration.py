@@ -44,6 +44,9 @@ class TestLegacyOpen(AppTestCase):
         for t in TABLES:
             old = self.legacy_summary[t]
             new = self.ctx.db.scalar('SELECT COUNT(*) FROM %s' % t)
+            if t in ('categories', 'category_fields'):      # 内置类目/字段会补齐（第二批），旧行必须全在
+                self.assertGreaterEqual(new, old, t)
+                continue
             self.assertEqual(new, old + expect_extra.get(t, 0), '表 %s 行数变了' % t)
 
     def test_untouched_tables_identical(self):
@@ -51,6 +54,10 @@ class TestLegacyOpen(AppTestCase):
                   'categories', 'category_fields', 'settings'):
             b = rows(self.before, 'SELECT * FROM %s ORDER BY 1' % t)
             a = rows(self.after, 'SELECT * FROM %s ORDER BY 1' % t)
+            if t in ('categories', 'category_fields'):      # 只比较旧库原有的行，补齐的内置类目/字段不算
+                a = a[:len(b)] if t == 'categories' else [r for r in a if r['id'] in {x['id'] for x in b}]
+                if t == 'categories':
+                    a = [r for r in a if r['id'] in {x['id'] for x in b}]
             if t == 'category_fields':   # is_required 被规范为 0（业务规则：规格字段全部选填）
                 for r in b:
                     r['is_required'] = 0

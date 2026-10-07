@@ -5,7 +5,7 @@
 ## 进度
 - [x] 第一批：数据层 + 客户模块
 - [x] 界面改版：左侧栏 + 吉卜力配色 + 苹果式圆角毛玻璃，字体霞鹜文楷（OFL，内置于 app/static/fonts）
-- [ ] 第二批：产品库 + 价格历史
+- [x] 第二批：产品库 + 价格历史（含供应商比价、合并同类项、SKU 自动编号、汇率）
 - [ ] 第三批：报价单 + PDF/Excel 输出
 - [ ] 第四批：Excel 产品导入 + PI 导入
 - [ ] 第五批：看板、设置（汇率/抬头/WA模板）、升级机制、旧 QuoteMaster 迁移
@@ -15,8 +15,9 @@
 app/main.py              入口
 app/sinlux/core/         db(外键开启+事务) schema migrations http(路由/安全) backup
 app/sinlux/customers/    service intake xlsx_io enrich routes
+app/sinlux/products/     seeds catalog(类目/SKU) rates pricing(建议价/价格历史) service(产品/供应商/合并) routes
 app/static/              index.html + css + js/(lib, main, pages/*)  —— 原单文件 HTML 已拆分
-tests/                   unittest（86项）+ browser_e2e.py（Playwright 无头浏览器）
+tests/                   unittest（124项）+ browser_e2e.py（Playwright 无头浏览器）
 ```
 运行测试：`python -m unittest discover -s tests`；浏览器测试：`python tests/browser_e2e.py`（需 `pip install playwright` + chromium，仅开发用）。
 
@@ -37,3 +38,17 @@ tests/                   unittest（86项）+ browser_e2e.py（Playwright 无头
 - openpyxl 写入以 `=` 开头的字符串会当公式，需 `cell.data_type='s'`；不要给 `+` 开头的电话号码加前缀。
 - 浏览器测试里"等元素出现"要避免命中上一页遗留的同名元素（竞态），应等具体内容。
 - bat 脚本必须纯 ASCII（沿用 v4.4 的结论）。
+
+## 第二批相对 v4.4 的行为变化
+1. 删除产品需二次确认；会删价格历史、供应商报价（含截图文件），已有报价单明细保留为快照（仅解除产品关联）。
+2. 只改名称/备注等不动价格的字段，不再重算建议价、不写价格历史（旧版每次保存都重算，会把"已对齐到成交价"的建议价冲掉）。
+3. 供应商"采纳"现在真的会把该价格设为产品当前成本（CNY）并写入价格历史（旧版代码注释这么写，但接口没实现）。历史记录的生效日期用采纳当天，报价日期放备注。
+4. 删除/手动添加价格记录后，产品当前成本和建议价按"日期最新记录"自动对齐（成本取最新成本记录；建议价取最新售价，没有售价则按公式）。
+5. EUR/VND 成本沿用旧版"不换算"，界面标注"未换算"。汇率改动只影响之后保存的产品。
+6. 首饰类目旧版没有预置 SKU 前缀，仍不替用户编造；需在「SKU前缀」里设置后才能自动编号。
+7. 不含类目/规格字段的增删改界面（旧版也没有对应接口），本批未做。
+## 记忆（第二批踩坑）
+- 价格对齐按 effective_date 取最新：任何"现在做的决定"（采纳供应商）必须用当天日期，否则会被日期更晚的旧记录压过。
+- 浏览器测试里被前面步骤删掉的测试数据不能再引用（客户 4 被删后再关联会失败）。
+- 同一 `root.addEventListener('click')` 每次渲染都叠加会导致重复触发，统一用 `root.onclick =` 并在切页时清空。
+- 测试里共享状态的 legacy 库类要拆成独立类，否则按字母序执行的用例会互相污染。
