@@ -131,11 +131,11 @@ class TestQuoteCrud(QuoteBase):
     def test_update_replaces_items_keeps_number_and_blocks_when_accepted(self):
         qid, cid = self.mk_quote(items=[{'name': 'old', 'quantity': 1, 'unit_price': 1}], lead_time='10 days')
         no = self.quote(qid)['quote_no']
-        st, r = self.c.put('/api/quotes/%d' % qid, {'currency': 'EUR', 'lead_time': '20 days', 'valid_days': 15,
+        st, r = self.c.put('/api/quotes/%d' % qid, {'currency': 'CNY', 'lead_time': '20 days', 'valid_days': 15,
                                                     'items': [{'name': 'new1', 'quantity': 2, 'unit_price': 5}, {'name': 'new2', 'quantity': 1, 'unit_price': 3}]})
         self.assertEqual(st, 200, r)
         q = r['quote']
-        self.assertEqual((q['quote_no'], q['currency'], q['lead_time'], q['valid_days'], q['total'], [i['name'] for i in q['items']]), (no, 'EUR', '20 days', 15, 13.0, ['new1', 'new2']))
+        self.assertEqual((q['quote_no'], q['currency'], q['lead_time'], q['valid_days'], q['total'], [i['name'] for i in q['items']]), (no, 'CNY', '20 days', 15, 13.0, ['new1', 'new2']))
         self.assertEqual(self.ctx.db.scalar('SELECT COUNT(*) FROM quote_items WHERE quote_id=?', (qid,)), 2)
         self.assertTrue(any('已修改' in n['content'] for n in self.c.get('/api/customers/%d' % cid)[1]['notes']))
         other = self.new_customer()
@@ -206,13 +206,13 @@ class TestQuoteStatusEffects(QuoteBase):
     def test_accept_writes_sell_history_once_with_customer_and_source(self):
         p1, p2 = self.new_product(sku='SH-1', cost=5, cost_currency='USD'), self.new_product(sku='SH-2', cost=5, cost_currency='USD')
         qid, cid = self.mk_quote(items=[{'product_id': p1, 'quantity': 10, 'unit_price': 8.8}, {'product_id': p2, 'quantity': 1, 'unit_price': 9.9},
-                                        {'name': 'freight', 'quantity': 1, 'unit_price': 50}], currency='EUR')
+                                        {'name': 'freight', 'quantity': 1, 'unit_price': 50}], currency='CNY')
         no = self.quote(qid)['quote_no']
         for _ in range(3):                                                                  # 反复点"成交"不能重复写
             self.c.post('/api/quotes/%d/status' % qid, {'status': 'accepted'})
         rows = self.sells()
         mine = [r for r in rows if r['source'] == no]
-        self.assertEqual(sorted((r['product_id'], r['price'], r['currency'], r['customer_id']) for r in mine), sorted([(p1, 8.8, 'EUR', cid), (p2, 9.9, 'EUR', cid)]))
+        self.assertEqual(sorted((r['product_id'], r['price'], r['currency'], r['customer_id']) for r in mine), sorted([(p1, 8.8, 'CNY', cid), (p2, 9.9, 'CNY', cid)]))
         self.assertEqual(mine[0]['effective_date'], time.strftime('%Y-%m-%d'))
         self.assertEqual(self.stage(cid), '成交')
         hints = self.c.get('/api/products/%d/last_price?customer_id=%d' % (p1, cid))[1]
@@ -322,7 +322,8 @@ class TestWhatsApp(QuoteBase):
 class TestQuoteSettings(QuoteBase):
     def test_company_info_roundtrip_and_validation(self):
         d = self.c.get('/api/settings/quote')[1]
-        self.assertEqual((d['company_name'], d['company_name_effective'], d['whatsapp_template_effective'] == DEFAULT_WA_TEMPLATE), ('', 'SINLUX', True))
+        self.assertEqual((d['company_name'], d['company_name_effective'], d['whatsapp_template_effective'] == DEFAULT_WA_TEMPLATE), ('SINLUX', 'SINLUX', True))
+        self.assertEqual((d['contact_name'], d['company_email'], d['bank_swift'], d['show_bank']), ('jun', 'jun@sinluxlight.com', 'DGCBCN22', '1'))   # 首次默认值
         self.assertIn('customer_name', d['variables'])
         r = self.c.put('/api/settings/quote', {'company_name': ' Caribe FF&E ', 'company_email': 'sales@caribe.com', 'company_phone': '+1 555', 'company_address': 'Kingston'})[1]
         self.assertEqual((r['company_name'], r['company_email']), ('Caribe FF&E', 'sales@caribe.com'))
@@ -331,6 +332,73 @@ class TestQuoteSettings(QuoteBase):
         self.assertEqual(self.c.get('/api/settings/quote')[1]['company_email'], 'sales@caribe.com')
         self.assertEqual(self.c.put('/api/settings/quote', {'evil_key': 'x'})[0], 200)
         self.assertEqual(self.ctx.db.get_setting('evil_key'), '')
+
+
+class TestQuoteBrandingAndBank(QuoteBase):
+    def setUp(self):
+        self.ctx.db.execute("DELETE FROM settings WHERE key LIKE 'bank_%' OR key IN ('show_bank','contact_name','company_name','company_email','company_phone','company_address','company_logo')")      # 回到首次使用的默认值
+
+    def pdf_text(self, qid):
+        st, r = self.c.post('/api/quotes/%d/pdf' % qid)
+        self.assertEqual(st, 200, r)
+        raw = self.c.call('GET', r['url'])[1]
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+            f.write(raw)
+        try:
+            return raw, subprocess.run(['pdftotext', '-layout', f.name, '-'], capture_output=True, text=True).stdout
+        finally:
+            os.unlink(f.name)
+
+    def test_pdf_has_contact_and_payment_information_by_default(self):
+        qid, _ = self.mk_quote()
+        raw, text = self.pdf_text(qid)
+        for must in ('jun@sinluxlight.com', '+86-18938260518', 'Chashan Town', 'Payment Information', '559000017172230', 'DGCBCN22', 'DGDL SINLUX MYSH', 'BANK OF DONGGUAN'):
+            self.assertIn(must, text)
+        self.assertIn(b'Nunito', raw)                                    # 圆润字体已嵌入
+        self.assertIn(b'/Subtype /Image', raw)                           # LOGO 图片
+
+    def test_bank_toggle_and_edit_and_blank_is_respected(self):
+        qid, _ = self.mk_quote()
+        self.c.put('/api/settings/quote', {'show_bank': '0'})
+        self.assertNotIn('Payment Information', self.pdf_text(qid)[1])
+        self.c.put('/api/settings/quote', {'show_bank': '1', 'bank_swift': '', 'bank_name': 'New Bank & Co <b>'})
+        t = self.pdf_text(qid)[1]
+        self.assertIn('New Bank & Co <b>', t)
+        self.assertNotIn('SWIFT Code', t)                                # 清空的项不显示，也不会被默认值顶回来
+        d = self.c.get('/api/settings/quote')[1]
+        self.assertEqual((d['bank_swift'], d['show_bank']), ('', '1'))
+
+    def test_logo_upload_reset_and_bad_file(self):
+        from imgutil import PNG_RED_BOX
+        builtin = self.c.call('GET', '/api/settings/quote/logo')[1]
+        self.assertTrue(builtin.startswith(b'\x89PNG'))
+        self.assertEqual(self.c.j('POST', '/api/settings/quote/logo', {'image_base64': 'data:image/png;base64,AAAA'})[0], 400)
+        import base64
+        st, r = self.c.j('POST', '/api/settings/quote/logo', {'image_base64': 'data:image/png;base64,' + base64.b64encode(PNG_RED_BOX).decode()})
+        self.assertEqual(st, 200, r)
+        custom = self.c.call('GET', '/api/settings/quote/logo')[1]
+        self.assertNotEqual(custom, builtin)
+        self.assertTrue(self.c.get('/api/settings/quote')[1]['logo_custom'])
+        qid, _ = self.mk_quote()
+        self.assertEqual(self.c.post('/api/quotes/%d/pdf' % qid)[0], 200)
+        self.assertEqual(self.c.j('DELETE', '/api/settings/quote/logo', {})[0], 200)
+        self.assertEqual(self.c.call('GET', '/api/settings/quote/logo')[1], builtin)
+        self.assertFalse(self.c.get('/api/settings/quote')[1]['logo_custom'])
+
+    def test_currency_only_usd_cny(self):
+        cid = self.new_customer(company='Cur Co')
+        for cur in ('EUR', 'VND', 'GBP'):
+            st, _ = self.c.post('/api/quotes', {'customer_id': cid, 'currency': cur, 'items': [{'name': 'x', 'quantity': 1, 'unit_price': 1}]})
+            self.assertEqual(st, 400, cur)
+        for cur in ('USD', 'CNY'):
+            self.assertEqual(self.c.post('/api/quotes', {'customer_id': cid, 'currency': cur, 'items': [{'name': 'x', 'quantity': 1, 'unit_price': 1}]})[0], 200)
+
+    def test_chinese_text_still_renders_with_rounded_latin_font(self):
+        qid, _ = self.mk_quote(items=[{'name': '客厅吊灯 Chandelier', 'quantity': 1, 'unit_price': 10}])
+        self.c.put('/api/settings/quote', {'bank_address': '中国广东省东莞市'})
+        raw, text = self.pdf_text(qid)
+        self.assertIn('客厅吊灯', text)
+        self.assertIn('中国广东省东莞市', text)
 
 
 class TestQuoteFiles(QuoteBase):
@@ -401,7 +469,8 @@ class TestQuoteFiles(QuoteBase):
         ws = load_workbook(io.BytesIO(raw)).active
         cells = {c.coordinate: c for row in ws.iter_rows() for c in row if c.value is not None}
         find = lambda text: [c for c in cells.values() if c.value == text]
-        self.assertEqual(cells['A1'].value, 'SINLUX Test Co')
+        self.assertIn('Email: sales@sinlux.test', cells['F1'].value)
+        self.assertEqual(len(ws._images), 1)                                                # 抬头 LOGO（这张单没有产品图）
         hdr = [c.value for c in ws[9]]
         self.assertEqual(hdr[:9], ['#', 'Image', 'SKU', 'Description', 'Specification', 'Qty', 'Unit', 'Price (USD)', 'Amount (USD)'])
         self.assertEqual((ws['I10'].value, ws['I11'].value, ws['I12'].value), ('=ROUND(F10*H10,2)', '=ROUND(F11*H11,2)', '=SUM(I10:I11)'))
@@ -418,7 +487,7 @@ class TestQuoteFiles(QuoteBase):
         pid = self.new_product(sku='XI-1', images=[up['id']])
         qid, _ = self.mk_quote(items=[{'product_id': pid, 'sku': 'XI-1', 'name': 'With image', 'quantity': 1, 'unit_price': 1}, {'name': 'No image', 'quantity': 1, 'unit_price': 1}])
         ws = load_workbook(io.BytesIO(self.export(qid, 'excel')[1])).active
-        self.assertEqual(len(ws._images), 1)
+        self.assertEqual(len(ws._images), 2)                                                # LOGO + 1 张产品图
 
     def test_export_download_names_are_safe(self):
         for p in ('/exports/..%2fcrm.db', '/exports/x.txt', '/exports/missing.pdf'):

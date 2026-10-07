@@ -39,7 +39,7 @@ export async function render(root, arg, isCurrent) {
     <div class="grid" style="margin-top:16px">
       <div class="field"><label>客户 *</label><div class="flex nowrap" id="custBox">${customer ? chosen(customer) : ''}</div>
         <input id="qCust" placeholder="输入公司名 / 联系人 / 邮箱搜索" autocomplete="off" ${customer ? 'style="display:none"' : ''}><div id="custSug"></div></div>
-      <div class="field"><label>币种</label><select id="qCur">${['USD', 'EUR', 'CNY'].map(c => `<option ${(q ? q.currency : 'USD') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>币种</label><select id="qCur">${[...new Set(['USD', 'CNY', q?.currency].filter(Boolean))].map(c => `<option ${(q ? q.currency : 'USD') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>有效期（天）</label><input id="qValid" type="number" min="0" value="${q ? q.valid_days : 30}"></div>
       <div class="field"><label>交期</label><input id="qLead" list="dlLead" value="${esc(q?.lead_time || '')}" placeholder="如 30-35 days after deposit"><datalist id="dlLead">${LEAD.map(x => `<option>${x}</option>`).join('')}</datalist></div>
       <div class="field"><label>付款条件</label><input id="qPay" list="dlPay" value="${esc(q?.payment_terms || '')}"><datalist id="dlPay">${TERMS_PAY.map(x => `<option>${x}</option>`).join('')}</datalist></div>
@@ -115,12 +115,11 @@ export async function render(root, arg, isCurrent) {
     const r = EMPTY_ROW();
     Object.assign(r, {product_id: full.id, sku: full.sku, name: full.name, spec: (full.spec_text || '').slice(0, 1500), unit: full.unit || 'pcs',
       thumb_url: full.thumb_url || '', quantity: full.moq ? String(full.moq) : '1'});
-    if (full.suggested_price != null) {                     // 建议价是美元：USD 直接用；CNY 按当前汇率换；欧元不自动填，避免错价
+    if (full.suggested_price != null) {                     // 建议价是美元：USD 直接用；CNY 按当前汇率换
       if (cur() === 'USD') r.unit_price = String(full.suggested_price);
       else if (cur() === 'CNY') r.unit_price = (Math.round(full.suggested_price / rate * 100) / 100).toString();
     }
     await hintFor(r, full);
-    if (cur() === 'EUR' && full.suggested_price != null) r.hint += '　<span class="err">建议价是美元，欧元报价请手动填单价</span>';
     if (rows.length === 1 && !rows[0].sku && !rows[0].name) rows.length = 0;
     rows.push(r);
     drawRows();

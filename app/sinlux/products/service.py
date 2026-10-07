@@ -4,7 +4,7 @@ import os
 
 from ..core import images as rawimg
 from ..core.util import ApiError, like, now, valid_date
-from .pricing import CURRENCIES, UNCONVERTED, suggest_usd
+from .pricing import CURRENCIES, LEGACY_CURRENCIES, UNCONVERTED, suggest_usd
 
 STATUSES = {'active': '在售', 'draft': '草稿', 'discontinued': '停产'}
 SORTS = {'updated': 'p.updated_at DESC, p.id DESC', 'created': 'p.id DESC', 'sku': 'p.sku COLLATE NOCASE ASC',
@@ -147,7 +147,7 @@ class ProductService:
         out['category_id'] = int(cid)
         out['cost'] = _num(g('cost'), '成本价', lo=0)
         cur_c = (g('cost_currency') or ('CNY' if not cur else 'USD')).upper()
-        if cur_c not in CURRENCIES:
+        if cur_c not in CURRENCIES and not (cur and cur['cost_currency'] == cur_c and cur_c in LEGACY_CURRENCIES):
             raise ApiError('币种无效，可选：' + '/'.join(CURRENCIES))
         out['cost_currency'] = cur_c
         pr = _num(g('profit_rate'), '利润率', lo=0, hi=10)

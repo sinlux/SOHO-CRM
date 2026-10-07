@@ -2,11 +2,12 @@
 """建议价公式与价格历史（只追加不覆盖）。
 
 建议价(USD) = 成本 × 汇率 × (1 + 利润率)。CNY 乘汇率；USD 直接用；
-EUR/VND 沿用旧版：不换算（数值直接乘加价），界面会标注"未换算"。
+只用 CNY（供应商/成本）和 USD（客户/售价）。旧数据里已有的 EUR/VND 成本仍照旧版规则（不换算，界面标"未换算"），但不能再新增。
 """
 from ..core.util import ApiError, now, today, valid_date
 
-CURRENCIES = ('CNY', 'USD', 'EUR', 'VND')
+CURRENCIES = ('CNY', 'USD')
+LEGACY_CURRENCIES = ('EUR', 'VND')       # 只读保留：旧数据可以继续存在，新输入不接受
 PRICE_TYPES = ('cost', 'sell')
 UNCONVERTED = ('EUR', 'VND')
 

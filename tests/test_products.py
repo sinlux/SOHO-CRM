@@ -67,7 +67,8 @@ class TestProductCrud(AppTestCase):
     def test_formula_by_currency_and_rate(self):
         usd = self.new_product(cost=10, cost_currency='USD', profit_rate=0.5)
         self.assertEqual(self.c.get('/api/products/%d' % usd)[1]['product']['suggested_price'], 15.0)
-        eur = self.new_product(cost=10, cost_currency='EUR', profit_rate=0.2)
+        eur = self.new_product(cost=10, cost_currency='USD', profit_rate=0.2)
+        self.ctx.db.execute("UPDATE products SET cost_currency='EUR' WHERE id=?", (eur,))      # 旧数据遗留的欧元成本
         p = self.c.get('/api/products/%d' % eur)[1]['product']
         self.assertEqual((p['suggested_price'], p['suggested_unconverted']), (12.0, True))     # 沿用旧版：不换算但标注
         zero = self.new_product(cost=0, cost_currency='USD')
@@ -76,6 +77,17 @@ class TestProductCrud(AppTestCase):
         p = self.c.get('/api/products/%d' % none)[1]['product']
         self.assertIsNone(p['cost'])
         self.assertEqual(self.ctx.db.scalar('SELECT COUNT(*) FROM price_history WHERE product_id=?', (none,)), 0)
+
+    def test_only_cny_usd_for_new_input_legacy_kept(self):
+        st, _ = self.c.post('/api/products', {'sku': 'EUR-1', 'name': 'x', 'category_id': self.cat_id('lighting'), 'cost': 10, 'cost_currency': 'EUR'})
+        self.assertEqual(st, 400)
+        pid = self.new_product(cost=10, cost_currency='USD')
+        self.ctx.db.execute("UPDATE products SET cost_currency='EUR' WHERE id=?", (pid,))
+        st, r = self.c.put('/api/products/%d' % pid, {'remark': 'x'})                       # 不动币种：旧 EUR 可继续保存
+        self.assertEqual(st, 200, r)
+        self.assertEqual(self.c.put('/api/products/%d' % pid, {'cost_currency': 'VND'})[0], 400)
+        self.assertEqual(self.c.put('/api/products/%d' % pid, {'cost_currency': 'CNY'})[0], 200)
+        self.assertEqual(self.c.put('/api/products/%d' % pid, {'cost_currency': 'EUR'})[0], 400)    # 换走后不能再换回去
 
     def test_default_profit_rate_and_currency(self):
         pid = self.new_product(cost=8)

@@ -83,3 +83,18 @@ def register(r):
     @r.put('/api/settings/quote')
     def put_settings(ctx, req):
         return {'ok': True, **ctx.quote_settings.update(req.json())}
+
+    @r.get('/api/settings/quote/logo')
+    def logo(ctx, req):
+        path = ctx.quote_settings.logo_path(ctx.uploads_dir)
+        return FileResponse(path)
+
+    @r.post('/api/settings/quote/logo')
+    def logo_up(ctx, req):
+        ctx.quote_settings.set_logo(ctx.uploads_dir, req.json().get('image_base64'))
+        return {'ok': True}
+
+    @r.delete('/api/settings/quote/logo')
+    def logo_reset(ctx, req):
+        ctx.quote_settings.reset_logo(ctx.uploads_dir)
+        return {'ok': True}

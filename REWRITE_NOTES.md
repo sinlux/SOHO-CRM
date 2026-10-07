@@ -19,7 +19,7 @@ app/sinlux/products/     seeds catalog(类目/SKU) rates(中行汇率+定时) pr
 app/sinlux/core/imaging.py  产品图自动规范化（Pillow）
 app/sinlux/quotes/       service(创建/编辑/状态联动) exporter(PDF/Excel/WhatsApp) settings(抬头+模板) routes
 app/static/              index.html + css + js/(lib, main, pages/*)  —— 原单文件 HTML 已拆分
-tests/                   unittest（215项）+ browser_e2e.py（Playwright 无头浏览器）
+tests/                   unittest（221项）+ browser_e2e.py（Playwright 无头浏览器）
 ```
 运行测试：`python -m unittest discover -s tests`；浏览器测试：`python tests/browser_e2e.py`（需 `pip install playwright` + chromium，仅开发用）。
 
@@ -80,3 +80,12 @@ tests/                   unittest（215项）+ browser_e2e.py（Playwright 无�
 - 前端金额必须用整数/BigInt 运算，7×1.005 在 JS 浮点下四舍五入会和 Decimal 差一分。
 - 「撤销成交价」按 source=报价单号 + customer_id 精确匹配，避免误删手动录入或 PI 导入的售价；SQLite 里 NULL 比较要用 `IS ?`。
 - 报价单号按数值取最大序号（字符串排序下 -1000 会排在 -999 前面）。
+
+## 第三批反馈修订（币种 / LOGO / 收款信息 / 字体）
+- 币种：只有 USD（对客户）与 CNY（对供应商）。新输入拒绝 EUR/VND；旧数据遗留的 EUR/VND 可继续显示、在币种不变时可继续保存（`LEGACY_CURRENCIES`）。
+- 已确认的行为：成交日期=点击成交当天；草稿不推进客户阶段；成交价不覆盖产品建议价（不同客户价格不同，只写价格历史）。
+- 抬头/收款信息默认值来自用户提供的资料，只在该键从未保存过时生效（`QuoteSettings._val`）；清空后保存即为空，不会被默认值顶回来。银行名按用户原文 `CO..LTD` 保存，如有笔误请在设置里改。
+- LOGO：内置 `app/assets/logo.png`（源图只有 234×83，放大 + 去底色 + 两色重绘）；设置页可上传替换（`imaging.logo_png` 自动去背景色、裁边、放大），恢复默认即删除自定义文件。
+- 字体：Nunito（Medium/SemiBold/Bold/ExtraBold，OFL，`app/static/fonts/nunito/`）直接由 reportlab 嵌入 PDF，不需要安装到系统。Nunito 没有汉字，中文片段用 `_mix()` 套 `<font name=中文字体>`。
+- 踩坑：reportlab `ParagraphStyle` 的 lambda 里同时给默认 fontName 和 kw 会重复关键字 → 合并 dict；页宽可用 = 182mm − 框架内边距，表格总宽别超 176mm，否则居中后左缘与段落错位；Playwright 在这个云环境要用 `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`。
+- 未验证：Windows 上的 PDF 中文字体实际效果；Excel 在没装 Nunito 的电脑上会回退默认字体（数据不受影响）。未做 Windows 自动装字体（PDF 用的是打包字体，不需要）。

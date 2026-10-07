@@ -161,3 +161,33 @@ def sniff(data):
     if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
         return 'webp'
     return None
+
+
+def logo_png(data, width=900):
+    """LOGO：背景色（取四角）变透明，裁掉空白，放大到 width 宽（低分辨率源图用 LANCZOS 放大，边缘更顺），输出带透明通道的 PNG。"""
+    if not _OK:
+        raise RuntimeError('Pillow 不可用')
+    im = Image.open(io.BytesIO(data))
+    im = ImageOps.exif_transpose(im)
+    if im.mode in ('RGBA', 'LA') or (im.mode == 'P' and 'transparency' in im.info):
+        im = im.convert('RGBA')
+        bg = Image.new('RGBA', im.size, (255, 255, 255, 255))
+        bg.alpha_composite(im)
+        im = bg
+    rgb = im.convert('RGB')
+    w, h = rgb.size
+    corners = [rgb.getpixel(p) for p in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1))]
+    base = tuple(sorted(c[i] for c in corners)[1] for i in range(3))            # 四角各通道取中位数
+    diff = ImageChops.difference(rgb, Image.new('RGB', rgb.size, base)).convert('L')
+    alpha = diff.point(lambda v: min(255, int(v * 255 / 48)))                   # 色差 ≥48 完全不透明，之间渐变
+    out = rgb.convert('RGBA')
+    out.putalpha(alpha)
+    box = alpha.point(lambda v: 255 if v > 20 else 0).getbbox()
+    if box:
+        pad = max(2, int(min(w, h) * 0.02))
+        out = out.crop((max(0, box[0] - pad), max(0, box[1] - pad), min(w, box[2] + pad), min(h, box[3] + pad)))
+    if out.width < width:
+        out = out.resize((width, max(1, round(out.height * width / out.width))), Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    out.save(buf, 'PNG', optimize=True)
+    return buf.getvalue()

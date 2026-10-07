@@ -7,7 +7,7 @@ import {money} from './products.js';
 //   右侧：页签 概览 / 规格 / 价格与成本 / 包装物流 / 供应商 / 文档 / 使用记录
 // 所有页签的输入共用一个「保存」；供应商、价格记录、文档是即时操作（需要先有产品）。
 
-const CURRENCIES = ['CNY', 'USD', 'EUR', 'VND'];
+const CURRENCIES = ['CNY', 'USD'];            // CNY 对供应商、USD 对客户；旧数据里的 EUR/VND 只在已有产品上保留显示
 const STATUSES = [['active', '在售'], ['draft', '草稿'], ['discontinued', '停产']];
 const DOC_KINDS = ['规格书', '认证', '图纸', '报价/合同', '其他'];
 const TABS = [['overview', '概览'], ['specs', '规格'], ['pricing', '价格与成本'], ['logistics', '包装物流'], ['suppliers', '供应商'], ['docs', '文档'], ['usage', '使用记录']];
@@ -98,7 +98,7 @@ export async function render(root, arg, isCurrent) {
 
       <div class="tabpanel" data-panel="pricing"><div class="grid">
         <div class="field"><label>成本价</label><div class="flex nowrap"><input id="pCost" type="number" step="any" min="0" value="${p.cost ?? ''}">
-          <select id="pCur" style="max-width:100px">${CURRENCIES.map(c => `<option ${c === p.cost_currency ? 'selected' : ''}>${c}</option>`).join('')}</select></div></div>
+          <select id="pCur" style="max-width:100px">${[...new Set([...CURRENCIES, p.cost_currency].filter(Boolean))].map(c => `<option ${c === p.cost_currency ? 'selected' : ''}>${c}</option>`).join('')}</select></div></div>
         <div class="field"><label>利润率（%）</label><input id="pProfit" type="number" step="any" min="0" value="${Math.round(p.profit_rate * 10000) / 100}"></div>
         <div class="field"><label>MOQ（最小起订量）</label><input id="pMoq" type="number" min="0" value="${p.moq ?? ''}"></div>
         <div class="field"><label>交期（天）</label><input id="pLead" type="number" min="0" value="${p.lead_time ?? ''}"></div></div>

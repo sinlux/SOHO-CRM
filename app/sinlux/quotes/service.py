@@ -16,7 +16,7 @@ from ..core.util import ApiError, like, now, today, valid_date
 
 STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired']
 STATUS_LABELS = {'draft': '草稿', 'sent': '已发送', 'accepted': '成交', 'rejected': '未成交', 'expired': '过期'}
-CURRENCIES = ('USD', 'EUR', 'CNY')
+CURRENCIES = ('USD', 'CNY')            # USD 对客户，CNY 对供应商
 EARLY_STAGES = ('', '潜在', '已联系', '沉睡')          # 发出报价时可自动推进到「已报价」的阶段
 MAX_ITEMS = 200
 PREFIX = 'SLQ'
@@ -64,9 +64,9 @@ class QuoteService:
         self.history = history
 
     # ---------- 校验 ----------
-    def _clean(self, data):
+    def _clean(self, data, keep_currency=None):
         cur = _txt(data.get('currency') or 'USD').upper()
-        if cur not in CURRENCIES:
+        if cur not in CURRENCIES and cur != keep_currency:      # 旧版遗留的 EUR 报价允许继续编辑，但不能新建
             raise ApiError('币种无效，可选：' + '/'.join(CURRENCIES))
         valid_days = data.get('valid_days')
         valid_days = 30 if valid_days in (None, '') else int(_num(valid_days, '有效期', lo=0))
@@ -206,7 +206,7 @@ class QuoteService:
             raise ApiError('已成交的报价单不能修改。如需修改，请先把状态改回「已发送」', 409)
         if data.get('customer_id') not in (None, '', q['customer_id']) and int(data['customer_id']) != q['customer_id']:
             raise ApiError('不能更换报价单的客户；请新建一张报价单')
-        head, items = self._clean(data)
+        head, items = self._clean(data, q['currency'])
         with self.db.tx():
             self.db.execute("""UPDATE quotes SET currency=?,valid_days=?,lead_time=?,payment_terms=?,shipping_terms=?,notes=?,total=?,updated_at=?
                 WHERE id=?""", (head['currency'], head['valid_days'], head['lead_time'], head['payment_terms'], head['shipping_terms'],
