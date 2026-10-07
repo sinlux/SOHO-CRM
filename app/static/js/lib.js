@@ -52,6 +52,16 @@ export function lvBadge(lv) {
   lv = lv || 0;
   return `<span class="lv lv${lv}" title="${esc(LV_DESC[lv] || '未分级')}">${lv ? 'LV' + lv : '—'}</span>`;
 }
+const AVATAR_COLORS = ['#6FA287', '#86BCD6', '#E0A458', '#CB705D', '#9C8CC2', '#7FB6A8', '#D98FA0', '#8DA66B'];
+// 苹果通讯录风格的圆形首字母头像，颜色由名字稳定决定
+export function avatar(name, size) {
+  const s = String(name || '?').trim();
+  let h = 0;
+  for (const ch of s) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  const first = [...s][0] || '?';
+  const st = `background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}${size ? `;width:${size}px;height:${size}px;font-size:${Math.round(size * .42)}px` : ''}`;
+  return `<span class="avatar" style="${st}">${esc(first.toUpperCase())}</span>`;
+}
 export const stageBadge = s => s ? `<span class="tag ${STAGE_CLASS[s] || ''}">${esc(s)}</span>` : '';
 
 // 把空白分隔的邮箱/网址渲染成链接。只放行 http/https/mailto，其它协议(javascript: 等)一律当纯文本。

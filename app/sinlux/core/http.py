@@ -14,7 +14,7 @@ MIME = {
     'js': 'text/javascript; charset=utf-8', 'json': 'application/json; charset=utf-8',
     'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif',
     'webp': 'image/webp', 'svg': 'image/svg+xml', 'ico': 'image/x-icon',
-    'pdf': 'application/pdf', 'zip': 'application/zip',
+    'pdf': 'application/pdf', 'zip': 'application/zip', 'woff2': 'font/woff2',
     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 }
 

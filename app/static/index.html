@@ -4,21 +4,42 @@
 <meta charset="utf-8">
 <title>SINLUX 客户管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%236FA287'/%3E%3Cpath d='M9 21c0-7 5-11 14-12-1 8-5 13-12 13z' fill='%23FFFDF8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/fonts/wenkai.css">
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-<header>
-  <h1>SINLUX 客户管理</h1>
-  <nav id="nav">
-    <a href="#list" data-v="list">客户列表</a>
-    <a href="#add" data-v="add">＋录入客户</a>
-    <a href="#reminders" data-v="reminders">跟进提醒<span id="remBadge"></span></a>
-    <a href="#import" data-v="import">Excel导入</a>
-    <a href="#settings" data-v="settings">设置</a>
-  </nav>
-</header>
-<main id="app"></main>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#6FA287"/><path d="M9 21c0-7 5-11 14-12-1 8-5 13-12 13z" fill="#FFFDF8"/><path d="M10 23c3-4 6-7 10-9" stroke="#6FA287" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+      <div><b>SINLUX</b><small>客户管理</small></div>
+    </div>
+    <nav id="nav">
+      <div class="nav-title">客户</div>
+      <a href="#list" data-v="list"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>客户列表</span></a>
+      <a href="#add" data-v="add"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg><span>录入客户</span></a>
+      <a href="#reminders" data-v="reminders"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>跟进提醒</span><i id="remBadge"></i></a>
+      <div class="nav-title">工具</div>
+      <a href="#import" data-v="import"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Excel导入</span></a>
+      <a href="#settings" data-v="settings"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg><span>设置</span></a>
+    </nav>
+    <svg class="hills" viewBox="0 0 240 90" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 60 Q40 30 90 52 T180 44 T240 56 V90 H0z" fill="#CFE3D2"/>
+      <path d="M0 74 Q50 50 110 68 T240 66 V90 H0z" fill="#B7D4BF"/>
+      <ellipse cx="190" cy="18" rx="22" ry="8" fill="#fff" opacity=".85"/><ellipse cx="172" cy="22" rx="14" ry="6" fill="#fff" opacity=".85"/>
+    </svg>
+  </aside>
+  <div class="content">
+    <header class="topbar">
+      <h1 id="pageTitle">客户列表</h1>
+      <label class="gsearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="gSearch" placeholder="搜索客户：公司 / 联系人 / 邮箱 / 备注，回车查看" autocomplete="off"></label>
+      <a class="btn-new" href="#add">＋ 录入客户</a>
+    </header>
+    <main id="app"></main>
+  </div>
+</div>
 <div id="modal"><div class="inner" id="modalBody"></div></div>
 <div class="toast" id="toast"></div>
 <script type="module" src="/js/main.js"></script>

@@ -7,6 +7,7 @@ import * as imp from './pages/import.js';
 import * as settings from './pages/settings.js';
 
 const PAGES = {list, add, customer, reminders, import: imp, settings};
+const TITLES = {list: '客户列表', add: '录入客户', customer: '客户详情', reminders: '跟进提醒', import: 'Excel 导入', settings: '设置'};
 let seq = 0;
 
 async function route() {
@@ -15,6 +16,7 @@ async function route() {
   const page = PAGES[view] || list;
   $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === (PAGES[view] ? view : 'list')
     || (view === 'customer' && a.dataset.v === 'list')));
+  $('#pageTitle').textContent = TITLES[PAGES[view] ? view : 'list'];
   const mine = ++seq;                    // 页面异步加载期间用户又点了别处，则丢弃旧结果
   const root = $('#app');
   try {
@@ -25,5 +27,13 @@ async function route() {
   updateBadge();
 }
 
+// 顶栏全局搜索：回车 -> 带着关键词进入客户列表
+$('#gSearch').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  list.setSearch(e.target.value.trim());
+  e.target.value = '';
+  if (location.hash.slice(1).split('/')[0] === 'list' || location.hash === '') route();
+  else location.hash = '#list';
+});
 window.addEventListener('hashchange', route);
 route();

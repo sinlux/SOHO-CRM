@@ -1,8 +1,10 @@
-import {$, esc, api, nav, lvBadge, stageBadge, toast, LV_DESC, STAGES} from '../lib.js';
+import {$, esc, api, nav, lvBadge, stageBadge, toast, avatar, LV_DESC, STAGES} from '../lib.js';
 
 const PAGE = 100;
 // 筛选条件保留在模块里：从详情页返回列表时不丢
 const state = {search: '', lv: '', country: '', stage: '', offset: 0};
+
+export function setSearch(q) { state.search = q; state.offset = 0; }
 
 export async function render(root, _arg, isCurrent) {
   const cs = await api('/api/countries');
@@ -33,7 +35,7 @@ export async function render(root, _arg, isCurrent) {
     $('#listBox').innerHTML = d.customers.length ? `<table><tr><th>等级</th><th>阶段</th><th>国家</th><th>公司</th><th>联系人</th><th>邮箱</th><th>主营/摘要</th></tr>
       ${d.customers.map(c => `<tr class="row" data-id="${c.id}">
         <td>${lvBadge(c.lv)}</td><td>${stageBadge(c.stage)}</td><td>${esc(c.country)}</td>
-        <td><b>${esc(c.company) || '<span class="muted">（无公司名）</span>'}</b><div class="muted">${esc(c.website)}</div></td>
+        <td><div class="who">${avatar(c.company || c.name)}<div><b>${esc(c.company) || '<span class="muted">（无公司名）</span>'}</b><div class="muted">${esc(c.website)}</div></div></div></td>
         <td>${esc(c.name)}</td><td>${esc(c.emails)}</td>
         <td class="muted">${esc((c.main_business || c.ai_summary || '').slice(0, 80))}</td></tr>`).join('')}</table>
       <div class="flex between" style="margin-top:10px"><span class="muted">第 ${from}–${to} 条</span>

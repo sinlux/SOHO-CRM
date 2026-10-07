@@ -1,4 +1,4 @@
-import {$, $$, esc, api, nav, toast, lvBadge, linkify, LV_DESC, STAGES} from '../lib.js';
+import {$, $$, esc, api, nav, toast, avatar, lvBadge, linkify, LV_DESC, STAGES} from '../lib.js';
 import {startEnrich, review} from './enrich.js';
 
 const FIELDS = [['country', '国家'], ['name', '联系人'], ['company', '公司名'], ['website', '网站'], ['emails', '邮箱'],
@@ -36,7 +36,7 @@ export async function render(root, arg, isCurrent) {
   root.innerHTML = `
   <div class="card"><div class="flex between">
     <div class="flex"><button id="btnBack">← 返回</button>
-      <h2 style="margin:0">${esc(c.company || c.name || '（无名客户）')}</h2>${lvBadge(c.lv)}
+      ${avatar(c.company || c.name, 44)}<h2 style="margin:0">${esc(c.company || c.name || '（无名客户）')}</h2>${lvBadge(c.lv)}
       <select id="cLv" style="width:150px">${['', 1, 2, 3, 4, 5, 6].map(l => `<option value="${l}" ${String(c.lv || '') === String(l) ? 'selected' : ''}>${l ? 'LV' + l + ' ' + LV_DESC[l] : '未分级'}</option>`).join('')}</select>
       <select id="cStage" style="width:110px"><option value="">未设置阶段</option>${STAGES.map(s => `<option ${c.stage === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
     <div class="flex"><button class="primary" id="btnEnrich">🔍 AI背调</button>
