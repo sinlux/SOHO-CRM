@@ -85,6 +85,10 @@ def main():
         # ---------- 列表 ----------
         print('客户列表')
         page.goto(base + '/')
+        page.wait_for_selector('text=沉睡预警')
+        check('首页是数据看板（统计卡片 + 排行 + 沉睡预警）', '成交转化率' in page.inner_text('#app') and 'Top 10 客户' in page.inner_text('#app'))
+        shot('00_dashboard')
+        page.goto(base + '/#list')
         page.wait_for_selector('#listBox table')
         check('列表首屏显示 100 行且总数为 112', page.locator('tr.row').count() == 100 and '共 112 个客户' in page.inner_text('#cnt'),
               page.inner_text('#cnt'))
@@ -655,6 +659,15 @@ def main():
         page.wait_for_function("document.body.innerText.includes('导入完成')")
         check('PI 导入：成交单、产品、客户阶段', ctx.db.scalar("SELECT status FROM quotes WHERE quote_no='SL-E2E-US'") == 'accepted'
               and ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='CSL-10100'") == 1)
+
+        # ---------- 设置页：汇率 / 导出 / 升级 ----------
+        page.goto(base + '/#settings')
+        page.wait_for_selector('#btnRateSave')
+        check('设置页有汇率、导出、升级区域', all(page.locator(x).count() for x in ('#btnRateRefresh', '#btnExportCust', '#btnUpdCheck')))
+        page.fill('#rateManual', '0.14'); page.click('#btnRateSave')
+        page.wait_for_function("document.body.innerText.includes('1 CNY = 0.14 USD')")
+        check('设置页保存手动汇率', ctx.rates.rate() == 0.14)
+        shot('13_settings_bottom')
 
         # ---------- 路由容错 ----------
         page.goto(base + '/#customer/999999')

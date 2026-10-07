@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """系统级 API：版本、设置、备份。"""
 import os
+import re
 
 from . import backup
 from .http import FileResponse
@@ -78,6 +79,43 @@ def register(r):
     @r.get('/backups/{name}')
     def download_backup(ctx, req):
         return FileResponse(backup.backup_path(ctx.backups_dir, req.params['name']), req.params['name'])
+
+    # ---------- 升级包 / 回退 ----------
+    @r.post('/api/update/upload')
+    def update_upload(ctx, req):
+        path = ctx.updater.new_upload_path()
+        try:
+            req.save_upload(path, 300 * 1024 * 1024)
+            info = ctx.updater.inspect(path)
+        except Exception:
+            if os.path.exists(path):
+                os.remove(path)
+            raise
+        return {**info, 'token': os.path.basename(path)}
+
+    @r.post('/api/update/apply')
+    def update_apply(ctx, req):
+        token = str(req.json().get('token') or '')
+        if not re.fullmatch(r'update_\d+\.zip', token):           # 只接受刚上传的包，不接受任意路径
+            raise ApiError('升级包标识无效，请重新上传')
+        path = os.path.join(ctx.updater.tmp, token)
+        if not os.path.isfile(path):
+            raise ApiError('升级包已过期，请重新上传', 404)
+        res = ctx.updater.apply(path)
+        os.remove(path)
+        return {'ok': True, **res}
+
+    @r.get('/api/update/versions')
+    def update_versions(ctx, req):
+        return {'versions': ctx.updater.list_versions(), 'current': ctx.version}
+
+    @r.post('/api/update/rollback')
+    def update_rollback(ctx, req):
+        return {'ok': True, **ctx.updater.rollback(req.json().get('name'))}
+
+    @r.get('/api/dashboard')
+    def dashboard(ctx, req):
+        return ctx.dashboard.overview()
 
     @r.get('/api/health')
     def health(ctx, req):

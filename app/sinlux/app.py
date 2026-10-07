@@ -3,6 +3,8 @@
 import os
 
 from .core import db as dbmod, migrations
+from .core.updater import Updater
+from .dashboard import Dashboard
 from .core.http import Router, make_server
 from .customers.service import CustomerService
 from .customers.xlsx_io import CustomerImporter
@@ -69,7 +71,9 @@ class Context:
         self.product_import = ProductImporter(self.db, self.products, self.catalog, self.media, os.path.join(self.import_tmp, 'products'))
         self.pi_import = PiImporter(self.db, self.products, self.quotes, self.customers, self.history, self.catalog, os.path.join(self.import_tmp, 'pi'))
         self.enricher = Enricher(self.db, self.customers, net)
+        self.dashboard = Dashboard(self.db, self.rates)
         self.version = read_version()
+        self.updater = Updater(os.path.dirname(APP_DIR), self.data_dir, self.version)
         self.scheduler = None
         if start_scheduler:                       # 每日自动更新中国银行汇率（仅 main.py 启动；测试里不开）
             self.scheduler = RateScheduler(self.rates)

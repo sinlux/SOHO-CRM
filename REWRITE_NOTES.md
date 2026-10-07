@@ -19,7 +19,7 @@ app/sinlux/products/     seeds catalog(类目/SKU) rates(中行汇率+定时) pr
 app/sinlux/core/imaging.py  产品图自动规范化（Pillow）
 app/sinlux/quotes/       service(创建/编辑/状态联动) exporter(PDF/Excel/WhatsApp) settings(抬头+模板) routes
 app/static/              index.html + css + js/(lib, main, pages/*)  —— 原单文件 HTML 已拆分
-tests/                   unittest（233项）+ browser_e2e.py（Playwright 无头浏览器）
+tests/                   unittest（249项）+ browser_e2e.py（Playwright 无头浏览器）
 ```
 运行测试：`python -m unittest discover -s tests`；浏览器测试：`python tests/browser_e2e.py`（需 `pip install playwright` + chromium，仅开发用）。
 
@@ -103,3 +103,11 @@ tests/                   unittest（233项）+ browser_e2e.py（Playwright 无�
 - 规格描述：产品表导入对已有 SKU 在有值时覆盖；PI 导入只在规格为空时填充。新建产品才应用统一利润率。
 - 踩坑：测试里 X-Filename 头必须 URL 编码（中文文件名）；xlwt 仅测试用（`pip install xlwt`），生产不需要；路由 `header_row=0` 不能用 `or 1` 兜底（会把 0 吞成 1）。
 - 未验证：真实 166MB 首饰表、真实 SINLUX PI（云端只有按文档模板造的假 PI）；Windows 上的 .xls 读取。
+
+## 第五批（看板 / 设置 / 升级机制 / 旧 QuoteMaster 迁移）
+- 看板口径写死在 `sinlux/dashboard.py`：转化率 = 成交 ÷ 非草稿报价；金额折美元（CNY 按当前汇率，旧 EUR/VND 不进排名只计数）；沉睡 = LV≥4 且 90 天内无备注无报价。首页默认就是看板（无 hash 时），未知路由仍回客户列表。
+- 升级包（`core/updater.py`）：路径白名单 `safe_rel`（app/ 下任意文件 + 根目录 bat/txt；拒绝 data/ versions/ .. 绝对路径 盘符 反斜杠 符号链接 重复条目 超大包）；先解到临时目录再覆盖，中途失败自动还原；快照不含 libs（包里动到的 libs 文件才逐个进快照）；回退会删掉升级新增的 app 文件。API 不再接受任意 zip 路径，只认刚上传的 token。升级包生成：`python tools/make_update.py <旧ref> <新ref> "说明" out.zip`。
+- 旧版 v4.4 的 `/api/update/apply` 接受任意 `zip_path`——新版已堵掉。
+- 迁移（`migrate/quotemaster.py`）：整个迁移一个事务，图片在事务后处理（失败只给提示）；识别重复：SKU 不区分大小写、客户按邮箱/公司名/仅姓名、供应商比价按 产品+供应商+价格+日期、旧报价按 OLD-xxxx、备注按原文；旧成交报价的成交价写入售价历史（来源 OLD-xxxx）；旧 EUR 报价原币种保留。迁移前自动备份。
+- 重启：升级/回退后需用户手动关闭窗口重开（没做自动重启——Windows 下 execv 不可靠，且手动更稳）。
+- 未验证：真实 SQLCipher 解密（云端没有 sqlcipher3，用同结构的普通 sqlite 库测迁移逻辑）；Windows 上的升级覆盖正在运行的 .py（Python 已加载的模块不受影响，重启后生效）；真实旧 QuoteMaster 库的列是否与我按旧代码推断的完全一致（缺列会被容忍，但没见过真库）。
