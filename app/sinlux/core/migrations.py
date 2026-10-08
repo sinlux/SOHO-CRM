@@ -32,6 +32,16 @@ def migrate(db):
             db.execute('ALTER TABLE products ADD COLUMN %s %s' % (col, ddl))
             did('products 补列 %s' % col)
 
+    for table, col, ddl in schema.LATER_COLUMNS:
+        if not db.column_exists(table, col):
+            db.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table, col, ddl))
+            did('%s 补列 %s' % (table, col))
+
+    # 2b. 供应商档案：把旧版散落在报价 / 产品里的供应商名字收拢成档案（只补不改）
+    n = _adopt_suppliers(db)
+    if n:
+        did('供应商档案：从历史报价/产品里整理出 %d 家' % n)
+
     # 3. 客户子表：新库直接建；旧库（无外键）保全孤儿后重建
     _ensure_child_tables(db, report, did)
 
@@ -128,3 +138,17 @@ def _ensure_child_tables(db, report, did):
                     raise RuntimeError('迁移后外键检查失败(%s): %s' % (t, bad[:3]))
     finally:
         db.set_foreign_keys(True)
+
+
+def _adopt_suppliers(db):
+    """旧数据里供应商只是文字：为每个不同的名字建一份档案，并把比价记录挂上去。重复运行不会重复建。"""
+    made = 0
+    names = [r['n'] for r in db.query("""SELECT TRIM(supplier_name) AS n FROM supplier_quotes WHERE TRIM(COALESCE(supplier_name,''))<>''
+        UNION SELECT TRIM(supplier) FROM products WHERE TRIM(COALESCE(supplier,''))<>''""")]
+    for name in names:
+        if not db.one('SELECT 1 FROM suppliers WHERE name=?', (name,)):
+            db.execute("INSERT INTO suppliers(name, status) VALUES(?, 'candidate')", (name,))
+            made += 1
+    db.execute("""UPDATE supplier_quotes SET supplier_id=(SELECT id FROM suppliers s WHERE s.name=TRIM(supplier_quotes.supplier_name))
+        WHERE supplier_id IS NULL AND TRIM(COALESCE(supplier_name,''))<>''""")
+    return made

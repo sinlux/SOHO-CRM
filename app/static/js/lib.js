@@ -52,9 +52,11 @@ export function toast(msg) {
   toastTimer = setTimeout(() => t.style.display = 'none', 2600);
 }
 
-export function modal(html) {
+export function modal(html, wide) {
   const body = $('#modalBody');
   body.innerHTML = html;
+  const inner = $('#modal .inner');
+  if (inner) inner.style.maxWidth = wide ? '1120px' : '';
   $('#modal').style.display = 'flex';
   return body;
 }

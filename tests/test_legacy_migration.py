@@ -61,6 +61,8 @@ class TestLegacyOpen(AppTestCase):
             if t == 'category_fields':   # is_required 被规范为 0（业务规则：规格字段全部选填）
                 for r in b:
                     r['is_required'] = 0
+            if t in ('supplier_quotes', 'category_fields') and b:   # 同上：只允许补列（supplier_id/project/applies_to），旧列的值不能变
+                a = [{k: r[k] for k in b[0]} for r in a]
             if t == 'products':          # 迁移只允许补列，不改旧值：只比较旧库原有的列
                 a = [{k: r[k] for k in b[0]} for r in a] if b else a
             self.assertEqual(a, b, '表 %s 内容被改动' % t)

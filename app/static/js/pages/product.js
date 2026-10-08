@@ -1,3 +1,4 @@
+import {openCatalogAdmin} from './catalog_admin.js';
 import {$, $$, esc, api, upload, nav, toast} from '../lib.js';
 import {money} from './products.js';
 
@@ -89,12 +90,16 @@ export async function render(root, arg, isCurrent) {
         <div class="field"><label>系列 / 款式组</label><input id="pSeries" value="${esc(p.series)}" placeholder="同一系列的不同规格可填同一个名字"></div>
         <div class="field"><label>计量单位</label><input id="pUnit" value="${esc(p.unit)}" list="unitList" placeholder="pcs"><datalist id="unitList">${['pcs', 'set', 'pair', 'm', 'm²', 'kg', 'carton'].map(u => `<option>${u}</option>`).join('')}</datalist></div>
         <div class="field"><label>原产地</label><input id="pOrigin" value="${esc(p.origin)}" placeholder="如 China"></div>
-        <div class="field"><label>HS 编码</label><input id="pHs" value="${esc(p.hs_code)}" placeholder="如 9405.42"></div>
+        <div class="field"><label>HS 编码（报关税则号）</label><div class="flex nowrap"><input id="pHs" list="hsList" value="${esc(p.hs_code)}" placeholder="如 9405.42"><button id="btnHs" title="用海关提供的查询网站，按产品名称查 HS 编码">查询</button></div>
+          <datalist id="hsList"></datalist><div class="muted" id="hsHint" style="margin-top:3px">下拉里是本库已经用过的编码，同类产品可直接复用</div></div>
       </div>
       <div class="field" style="margin-top:14px"><label>规格描述（主规格字段：尺寸、材质、参数、颜色、包装等都可以写在这里）</label><textarea id="pSpec" style="min-height:150px">${esc(p.spec_text)}</textarea></div>
-      <div class="field" style="margin-top:14px"><label>内部备注（不会出现在报价单上）</label><textarea id="pRemark">${esc(p.remark || '')}</textarea></div></div>
+      <div class="field" style="margin-top:14px"><label>内部备注（只有你自己看得到，不会印在报价单上，也不会给客户）</label>
+        <textarea id="pRemark" placeholder="例：和供应商沟通的要点（含税价、起订量、交期、付款方式）、报价背景（这个价是给哪个客户/项目的）、质量问题、特别注意事项、下次跟进该问什么……">${esc(p.remark || '')}</textarea></div></div>
 
-      <div class="tabpanel" data-panel="specs"><p class="muted" style="margin-bottom:10px">结构化规格全部选填，用于筛选和对比；详细描述写在「概览」的规格描述里。</p><div class="grid" id="fieldsBox"></div></div>
+      <div class="tabpanel" data-panel="specs"><p class="muted" style="margin-bottom:10px">结构化规格全部选填，用于筛选和对比；详细描述写在「概览」的规格描述里。选了「子类」后，只显示和该子类有关的规格项。</p>
+        <div class="flex" style="margin-bottom:10px"><button id="btnManageFields">⚙ 管理子类和规格字段…</button><label class="flex"><input type="checkbox" id="showAllFields"> 显示全部字段</label><span class="muted" id="hiddenInfo"></span></div>
+        <div class="grid" id="fieldsBox"></div></div>
 
       <div class="tabpanel" data-panel="pricing"><div class="grid">
         <div class="field"><label>成本价</label><div class="flex nowrap"><input id="pCost" type="number" step="any" min="0" value="${p.cost ?? ''}">
@@ -120,9 +125,9 @@ export async function render(root, arg, isCurrent) {
         <p class="muted" style="margin-top:10px">体积由外箱尺寸自动计算；装柜数量等因品类而异，可在「规格」页签里的对应字段填写。</p></div>
 
       <div class="tabpanel" data-panel="suppliers">
-        <div class="field" style="max-width:380px;margin-bottom:12px"><label>主供应商（采纳报价时会自动更新）</label><input id="pSup" value="${esc(p.supplier || '')}"></div>
-        ${isNew ? '<div class="muted">保存产品后可记录多个供应商的报价并比价。</div>' : `<div class="sec-title"><h3>🏭 供应商比价</h3></div><div id="supBox">加载中…</div>
-        <div class="flex" style="margin-top:12px"><input id="sName" placeholder="供应商名" style="max-width:180px"><input id="sPrice" type="number" step="any" min="0" placeholder="人民币报价" style="max-width:140px">
+        <div class="field" style="max-width:380px;margin-bottom:12px"><label>主供应商（采纳报价时会自动更新）</label><input id="pSup" list="vendorList" value="${esc(p.supplier || '')}" placeholder="从供应商档案里选，或直接输入新名字"><datalist id="vendorList"></datalist></div>
+        ${isNew ? '<div class="muted">保存产品后可记录多个供应商的报价并比价。</div>' : `<div class="sec-title"><h3>🏭 供应商比价</h3><a class="ext" href="#vendors">打开「供应商」菜单（聊天记录、截图归档、按项目对比）</a></div><div id="supBox">加载中…</div>
+        <div class="flex" style="margin-top:12px"><input id="sName" list="vendorList" placeholder="供应商名（可选已有的）" style="max-width:200px"><input id="sProject" placeholder="询价项目（可选）" style="max-width:170px"><input id="sPrice" type="number" step="any" min="0" placeholder="人民币报价" style="max-width:140px">
           <input id="sDate" type="date" style="max-width:160px"><input id="sRemark" placeholder="备注" style="max-width:220px"><button id="btnAddSup">添加报价</button></div>`}</div>
 
       <div class="tabpanel" data-panel="docs">${isNew ? '<div class="muted">保存产品后可上传规格书、认证、图纸等文档。</div>' : `
@@ -184,8 +189,21 @@ export async function render(root, arg, isCurrent) {
 
   // ---------- 规格字段 / 联动 ----------
   const drawFields = () => {
-    $('#fieldsBox').innerHTML = fields.length ? fields.map(f => `<div class="field ${f.type === 'textarea' || f.type === 'multi' ? 'wide' : ''}"><label>${esc(f.label)}</label>${fieldInput(f, values[f.id])}</div>`).join('')
+    $('#fieldsBox').innerHTML = fields.length ? fields.map(f => `<div class="field ${f.type === 'textarea' || f.type === 'multi' ? 'wide' : ''}" data-applies="${esc((f.applies_list || []).join('|'))}"><label>${esc(f.label)}</label>${fieldInput(f, values[f.id])}</div>`).join('')
       : '<span class="muted">该类目没有结构化字段</span>';
+    applyVisibility();
+  };
+  // 只对部分子类有意义的字段：选了子类就收起无关的（仍保留在页面里，值不会丢）
+  const applyVisibility = () => {
+    const sf = subField(), el = sf && $(`#fv_${sf.id}`), sub = el ? el.value : '', all = $('#showAllFields').checked;
+    let hidden = 0;
+    $$('#fieldsBox .field[data-applies]').forEach(w => {
+      const ap = w.dataset.applies ? w.dataset.applies.split('|') : [];
+      const hide = !all && sub && ap.length && !ap.includes(sub);
+      w.style.display = hide ? 'none' : '';
+      hidden += hide ? 1 : 0;
+    });
+    $('#hiddenInfo').textContent = hidden ? `已收起 ${hidden} 个与「${sub}」无关的字段` : '';
   };
   const collectValues = () => {
     const out = {};
@@ -247,6 +265,19 @@ export async function render(root, arg, isCurrent) {
   };
   // SKU：选好子类后若 SKU 为空（或还是上一次自动生成的），自动给出下一个编号
   let lastAuto = '';
+  (async () => {
+    try { $('#hsList').innerHTML = (await api('/api/hs_codes')).codes.map(c => `<option value="${esc(c.hs_code)}">${esc(c.names)}（本库 ${c.n} 个产品用过）</option>`).join(''); } catch (e) { /* 提示失败不影响编辑 */ }
+  })();
+  $('#btnHs').onclick = async () => {
+    const url = (await api('/api/settings')).hs_lookup_url;
+    if (!url) {
+      toast('还没设置 HS 编码查询网址：到「设置」页填入海关提供的查询网站（可用 {keyword} 代表产品名）');
+      return;
+    }
+    const kw = $('#pName').value.trim() || $('#pHs').value.trim();
+    window.open(url.includes('{keyword}') ? url.replace('{keyword}', encodeURIComponent(kw)) : url, '_blank', 'noopener');
+    $('#hsHint').textContent = '在查询网站里找到编码后，复制粘贴到这里。';
+  };
   const autoSku = async (silent) => {
     const sf = subField(), el = sf && $(`#fv_${sf.id}`);
     try {
@@ -255,8 +286,15 @@ export async function render(root, arg, isCurrent) {
     } catch (e) { if (!silent) toast(e.message); else $('#skuHint').textContent = ''; }
   };
   $('#btnAuto').onclick = () => autoSku(false);
+  $('#showAllFields').onchange = applyVisibility;
+  $('#btnManageFields').onclick = () => openCatalogAdmin(async () => {
+    values = collectValues();
+    fields = (await api(`/api/categories/${$('#pCat').value}/fields`)).fields;
+    drawFields();
+  }, $('#pCat').value);
   $('#fieldsBox').addEventListener('change', e => {
     const sf = subField();
+    if (sf && e.target.id === 'fv_' + sf.id) applyVisibility();
     if (sf && e.target.id === 'fv_' + sf.id && isNew && ($('#pSku').value === '' || $('#pSku').value === lastAuto)) autoSku(true);
   });
 
@@ -294,7 +332,7 @@ export async function render(root, arg, isCurrent) {
   // ---------- 供应商 / 价格历史 / 文档 / 使用记录（即时操作） ----------
   const drawSup = list => {
     $('#supBox').innerHTML = list.length ? `<table><tr><th>供应商</th><th>人民币报价</th><th>日期</th><th>备注</th><th></th></tr>
-      ${list.map(s => `<tr><td><b>${esc(s.supplier_name)}</b> ${s.is_adopted ? '<span class="tag good">已采纳</span>' : ''}</td><td>${money(s.price_cny, '¥')}</td><td>${esc(s.quote_date || '')}</td>
+      ${list.map(s => `<tr><td>${s.supplier_id ? `<a class="ext" href="#vendor/${s.supplier_id}"><b>${esc(s.supplier_name)}</b></a>` : `<b>${esc(s.supplier_name)}</b>`}${s.project ? ` <span class="tag">${esc(s.project)}</span>` : ''} ${s.is_adopted ? '<span class="tag good">已采纳</span>' : ''}</td><td>${money(s.price_cny, '¥')}</td><td>${esc(s.quote_date || '')}</td>
         <td class="muted">${esc(s.remark || '')}${s.screenshot_url ? ` <a class="ext" href="${esc(s.screenshot_url)}" target="_blank" rel="noopener">截图</a>` : ''}</td>
         <td class="flex">${s.is_adopted ? '' : `<button class="small primary" data-adopt="${s.id}">采纳</button>`}<button class="small danger" data-sdel="${s.id}">删</button></td></tr>`).join('')}</table>
       <p class="muted" style="margin-top:6px">「采纳」会把该报价设为产品当前成本（CNY）并写入价格历史。</p>` : '<span class="muted">还没有供应商报价</span>';
@@ -318,6 +356,7 @@ export async function render(root, arg, isCurrent) {
       <td>${q.customer_id ? `<a class="ext" href="#customer/${q.customer_id}">${esc(q.company || '')}</a>` : ''}</td><td>${q.quantity}</td><td>${money(q.unit_price, q.currency)}</td><td class="muted">${esc((q.created_at || '').slice(0, 10))}</td></tr>`).join('')}</table>`
       : '<span class="muted">还没有出现在任何报价单里</span>';
   };
+  api('/api/vendors/names').then(r => { const dl = $('#vendorList'); if (dl) dl.innerHTML = r.names.map(n => `<option value="${esc(n)}">`).join(''); }).catch(() => {});
   drawDocs(p.files);
   await Promise.all([loadSup(), loadHist(), loadUsage()]);
 
@@ -334,8 +373,8 @@ export async function render(root, arg, isCurrent) {
   };
   $('#btnAddSup').onclick = async () => {
     try {
-      await api(`/api/products/${pid}/suppliers`, 'POST', {supplier_name: $('#sName').value, price_cny: num('#sPrice'), quote_date: $('#sDate').value || null, remark: $('#sRemark').value});
-      toast('已添加'); loadSup(); ['#sName', '#sPrice', '#sDate', '#sRemark'].forEach(s => $(s).value = '');
+      await api(`/api/products/${pid}/suppliers`, 'POST', {supplier_name: $('#sName').value, project: $('#sProject').value, price_cny: num('#sPrice'), quote_date: $('#sDate').value || null, remark: $('#sRemark').value});
+      toast('已添加'); loadSup(); ['#sName', '#sProject', '#sPrice', '#sDate', '#sRemark'].forEach(s => $(s).value = '');
     } catch (e) { toast(e.message); }
   };
   $('#btnDoc').onclick = async () => {

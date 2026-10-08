@@ -117,3 +117,10 @@ tests/                   unittest（249项）+ browser_e2e.py（Playwright 无�
 - 修复：① 完整安装包内置官方 Python 3.12（nuget.org 上 PSF 发布的 `python` 包，精简后放 `python/`），开箱即用，启动.bat 优先用它（app/libs 里的 Pillow 等是 cp312 编译的，系统装别的版本会不匹配）；② 下载兜底改用 `%SystemRoot%\System32\curl.exe`、powershell 全路径，解压失败再试 `tar`；③ 下载不下来时给出手动安装指引。
 - 生成：`python tools/make_release.py HEAD 输出目录 --python python.3.12.10.nupkg`。
 - 未在真实 Windows 上验证 bat 的新逻辑（云端只能检查语法/编码：纯 ASCII + CRLF）。
+
+## 5.0.0-rc.2（用户验收反馈）
+- 类目/字段/子类管理（`products/catalog.py` 末尾）：用户删掉的内置类目/字段/子类记在 settings 的 `seed_removed`，`ensure_seeds` 每次启动会补缺失的内置项，不记下来删了会"复活"。「子类」= 字段 `subcategory` 的选项 + `subcategory_prefixes`，两边一起改；改名时同步产品上已填的值和字段的适用范围。新字段 key 自动生成（`f_xxxx`），中文名只是 label。`category_fields.applies_to` 空 = 所有子类。UI 里被收起的字段仍在 DOM 里（只 display:none），所以保存时值不会丢。
+- 供应商：新表 `suppliers` / `supplier_chats`，`supplier_quotes` 加 `supplier_id`、`project`；启动迁移 `_adopt_suppliers` 把历史名字收拢成档案（幂等）。API 用 `/api/vendors`（`/api/suppliers/{id}` 早就被「供应商报价」占用）。
+- OCR：`suppliers/ocr.py` + `ocr_win.ps1` 用 Windows 自带 `Windows.Media.Ocr`（本机识别，不上传）；非 Windows 返回 unavailable。**未在真实 Windows 上验证**（云端只能测切条/清洗逻辑和状态流转）。需要系统装有中文语言包才能识别中文。识别结果会去掉汉字间的空格；超长截图按 5000px 切条。后台线程识别，期间用户手改过文字则不覆盖（`ocr_status='pending'` 才写回）。
+- HS 编码：没有拿到用户说的海关网站，所以做成「设置里填查询网址（可用 {keyword}）+ 本库已用编码下拉复用」，没有内置任何编码数据（不编造）。
+- 前端防抖：搜索框的 250ms 定时器触发时用户可能已切页，`load` 开头要判断元素还在。

@@ -24,6 +24,12 @@ def register(r):
                                          req.arg('stage'), limit, offset)
         return {'customers': rows, 'total': total}
 
+    @r.get('/api/customers/brief')
+    def customers_brief(ctx, req):
+        """客户下拉/缩写补全用的精简列表（全部客户，只含几个字段）。"""
+        rows = ctx.db.query("SELECT id, company, name, emails, website, country, lv, stage FROM customers ORDER BY COALESCE(NULLIF(company,''), name) COLLATE NOCASE LIMIT 20000")
+        return {'customers': rows}
+
     @r.post('/api/customers')
     def create_customer(ctx, req):
         cid = ctx.customers.create(req.json())

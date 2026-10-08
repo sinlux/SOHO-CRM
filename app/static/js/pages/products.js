@@ -1,4 +1,5 @@
 import {$, $$, esc, api, nav, toast, modal, closeModal} from '../lib.js';
+import {openCatalogAdmin} from './catalog_admin.js';
 
 const PAGE = 60;
 const state = {search: '', category: '', status: '', sort: 'updated', offset: 0};
@@ -25,7 +26,7 @@ export async function render(root, _arg, isCurrent) {
       <div class="chips" id="chips"><span class="chip ${state.category === '' ? 'on' : ''}" data-cat="">全部</span>
         ${cats.categories.map(c => `<span class="chip ${String(state.category) === String(c.id) ? 'on' : ''}" data-cat="${c.id}">${esc(c.icon || '')} ${esc(c.name)}<small>${c.product_count}</small></span>`).join('')}</div>
       <div class="flex"><button class="rate-pill" id="btnRate" title="CNY→USD 汇率（中国银行美元现汇买入价），用于计算建议价">汇率 1 CNY = ${rate.rate} USD · ${SRC[rate.source] || esc(rate.source)}${rate.last_error ? ' ⚠' : ''}</button>
-        <button id="btnPrefix">SKU前缀</button><button id="btnTools">维护 ▾</button><button class="primary" id="btnNew">＋ 新建产品</button></div></div>
+        <button id="btnCatAdmin" title="新建/改名/删除类目、子类、规格字段，设置 SKU 前缀">类目与规格管理</button><button id="btnTools">维护 ▾</button><button class="primary" id="btnNew">＋ 新建产品</button></div></div>
     <div class="flex" style="margin-top:14px"><input id="fSearch" placeholder="搜索：SKU / 名称 / 品牌 / 系列 / 供应商 / 规格" style="max-width:380px" value="${esc(state.search)}">
       <select id="fStatus" style="max-width:120px"><option value="">全部状态</option>${Object.entries(STATUS_LABEL).map(([k, l]) => `<option value="${k}" ${state.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="fSort" style="max-width:150px">${[['updated', '最近更新'], ['created', '最新创建'], ['sku', 'SKU'], ['name', '名称'], ['cost', '成本从低到高']].map(([k, l]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -44,6 +45,7 @@ export async function render(root, _arg, isCurrent) {
   const stTag = p => p.status && p.status !== 'active' ? ` <span class="tag ${p.status === 'draft' ? 'warn' : 'bad'}">${esc(p.status_label)}</span>` : '';
   const priceBits = p => `${money(p.cost, p.cost_currency)}`;
   const load = async () => {
+    if (!$('#fSearch')) return;
     state.search = $('#fSearch').value.trim(); state.status = $('#fStatus').value; state.sort = $('#fSort').value;
     const p = new URLSearchParams({limit: PAGE, offset: state.offset, sort: state.sort});
     if (state.search) p.set('search', state.search);
@@ -108,7 +110,7 @@ export async function render(root, _arg, isCurrent) {
   $('#btnClear').onclick = () => { selected.clear(); $$('[data-sel]').forEach(c => c.checked = false); updSel(); };
   $('#btnMerge').onclick = () => mergeDialog(() => { selected.clear(); render(root, _arg, isCurrent); });
   $('#btnRate').onclick = () => rateDialog(() => render(root, _arg, isCurrent));
-  $('#btnPrefix').onclick = () => prefixDialog(cats.categories);
+  $('#btnCatAdmin').onclick = () => openCatalogAdmin(() => render(root, _arg, isCurrent), state.category || undefined);
   $('#btnTools').onclick = () => { const m = $('#toolsMenu'); m.style.display = m.style.display === 'none' ? '' : 'none'; };
   $('#toolsMenu').onclick = async e => {
     const b = e.target.closest('[data-tool]');
@@ -176,25 +178,4 @@ async function rateDialog(done) {
   };
   $('#saveBoc').onclick = act(() => api('/api/rate', 'PUT', {boc_buy: $('#bocBuy').value}), '已保存');
   $('#saveRt').onclick = act(() => api('/api/rate', 'PUT', {rate: $('#rt').value}), '汇率已保存');
-}
-
-async function prefixDialog(cats) {
-  modal('<h2>SKU 前缀</h2><p class="muted">SKU = 类目前缀 + 子类前缀 + 6 位序号，如 SL + SP + 000001。前缀为 1–4 位英文字母。</p><div id="pfBody">加载中…</div><div style="margin-top:14px"><button id="x">关闭</button></div>');
-  $('#x').onclick = closeModal;
-  const draw = async cid => {
-    const d = await api(`/api/categories/${cid}/prefixes`);
-    $('#pfBody').innerHTML = `<div class="flex" style="margin:10px 0"><select id="pfCat" style="max-width:200px">${cats.map(c => `<option value="${c.id}" ${c.id == cid ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
-      <span>类目前缀</span><input id="pfMain" value="${esc(d.category_prefix || '')}" style="max-width:100px" maxlength="4"><button id="pfSaveMain">保存</button></div>
-      <table><tr><th>子类（须与产品「子类」字段取值一致）</th><th>前缀</th><th></th></tr>
-      ${d.subcategories.map(s => `<tr><td>${esc(s.subcategory_value)}</td><td><b>${esc(s.prefix)}</b></td><td><button class="small danger" data-del="${s.id}">删</button></td></tr>`).join('')}
-      <tr><td><input id="pfSub" placeholder="子类名，如 射灯"></td><td><input id="pfSubP" maxlength="4" placeholder="SP"></td><td><button class="small primary" id="pfAdd">添加</button></td></tr></table>`;
-    $('#pfCat').onchange = e => draw(e.target.value);
-    $('#pfSaveMain').onclick = async () => { try { await api(`/api/categories/${cid}/prefix`, 'PUT', {prefix: $('#pfMain').value}); toast('已保存'); draw(cid); } catch (e) { toast(e.message); } };
-    $('#pfAdd').onclick = async () => { try { await api(`/api/categories/${cid}/sub_prefixes`, 'POST', {subcategory_value: $('#pfSub').value, prefix: $('#pfSubP').value}); draw(cid); } catch (e) { toast(e.message); } };
-    $('#pfBody').onclick = async e => {
-      const b = e.target.closest('[data-del]');
-      if (b) { try { await api('/api/sub_prefixes/' + b.dataset.del, 'DELETE', {}); draw(cid); } catch (err) { toast(err.message); } }
-    };
-  };
-  draw(cats[0].id);
 }

@@ -18,6 +18,8 @@ from .products.service import ProductService, SupplierService
 from .imports import routes as import_routes
 from .imports.pi_import import PiImporter
 from .imports.product_import import ProductImporter
+from .suppliers import routes as supplier_routes
+from .suppliers.service import SupplierBook
 from .quotes.exporter import QuoteExporter
 from .quotes.service import QuoteService
 from .quotes.settings import QuoteSettings
@@ -42,7 +44,7 @@ def read_version():
 class Context:
     """路由处理函数拿到的共享上下文。"""
 
-    def __init__(self, data_dir, net=None, rate_fetcher=None, start_scheduler=False):
+    def __init__(self, data_dir, net=None, rate_fetcher=None, start_scheduler=False, async_ocr=True):
         self.data_dir = os.path.abspath(data_dir)
         self.images_dir = os.path.join(self.data_dir, 'images')
         self.uploads_dir = os.path.join(self.data_dir, 'uploads')
@@ -61,7 +63,8 @@ class Context:
         self.media = MediaStore(self.db, self.uploads_dir, self.files_dir)
         self.media.cleanup_staged()
         self.products = ProductService(self.db, self.rates, self.history, self.catalog, self.media)
-        self.suppliers = SupplierService(self.db, self.uploads_dir, self.products, self.history)
+        self.vendors = SupplierBook(self.db, os.path.join(self.data_dir, 'supplier_files'), async_ocr=async_ocr)
+        self.suppliers = SupplierService(self.db, self.uploads_dir, self.products, self.history, self.vendors)
         self.customers = CustomerService(self.db, self.images_dir)
         self.quotes = QuoteService(self.db, self.customers, self.history)
         self.quote_settings = QuoteSettings(self.db)
@@ -96,10 +99,11 @@ def build_router():
     product_routes.register(r)
     quote_routes.register(r)
     import_routes.register(r)
+    supplier_routes.register(r)
     return r
 
 
-def create_app(data_dir=None, port=8123, net=None, rate_fetcher=None, start_scheduler=False):
-    ctx = Context(data_dir or default_data_dir(), net, rate_fetcher, start_scheduler)
+def create_app(data_dir=None, port=8123, net=None, rate_fetcher=None, start_scheduler=False, async_ocr=True):
+    ctx = Context(data_dir or default_data_dir(), net, rate_fetcher, start_scheduler, async_ocr)
     server = make_server(ctx, build_router(), STATIC_DIR, port)
     return ctx, server

@@ -69,14 +69,18 @@ def main():
         page = context.new_page()
         console_errors = []
         page.on('console', lambda m: console_errors.append(m.text) if m.type == 'error' else None)
-        page.on('pageerror', lambda e: console_errors.append('PAGEERROR ' + str(e)))
+        page.on('pageerror', lambda e: console_errors.append('PAGEERROR ' + str(e) + ' @ ' + str(getattr(e, 'stack', ''))[:300]))
         bad_responses = []
         page.on('response', lambda r: bad_responses.append((r.status, r.url.replace(base, ''))) if r.status >= 400 else None)
         dialogs = []
+        prompt_answers = []                       # 测试里预先排好的 prompt 回答（先进先出）；没排就用默认值
 
         def on_dialog(d):
             dialogs.append(d.message)
-            d.accept(d.default_value) if d.type == 'prompt' else d.accept()
+            if d.type == 'prompt':
+                d.accept(prompt_answers.pop(0) if prompt_answers else d.default_value)
+            else:
+                d.accept()
         page.on('dialog', on_dialog)
 
         def shot(name):
@@ -207,6 +211,16 @@ def main():
         # ---------- 智能录入 ----------
         print('智能录入')
         page.click('a[data-v=add]')
+        page.wait_for_selector('#n_company')
+        check('录入客户默认是手动录入表单（同时有自动识别入口）', page.locator('#btnCreate').count() == 1 and page.locator('#modeSeg button').count() == 2)
+        # 手动录入一个客户（含阶段、地址），自动查重不拦截
+        page.fill('#n_company', 'Manual Entry Co'); page.fill('#n_name', 'Mary'); page.fill('#n_emails', 'mary@manual-entry.test'); page.fill('#n_address', '1 Test Road')
+        page.select_option('#n_stage', '已联系'); page.uncheck('#autoEnrich')
+        page.click('#btnCreate')
+        page.wait_for_selector('#btnSave')
+        check('手动录入：创建成功并带上阶段/地址', ctx.db.scalar("SELECT stage || '|' || address FROM customers WHERE company='Manual Entry Co'") == '已联系|1 Test Road')
+        page.click('a[data-v=add]')
+        page.click('#modeSeg button[data-m=auto]')
         page.fill('#smartInput', 'buyer7@fake7.com')
         page.click('#btnParse')
         page.wait_for_selector('.warnbox')
@@ -449,12 +463,30 @@ def main():
         page.click('[data-tool=recalc]')
         page.wait_for_function("document.querySelector('#toast').textContent.includes('已重算')")
         check('「按最新汇率重算建议价」可用', True)
-        page.click('#btnPrefix')
-        page.wait_for_selector('#pfBody table')
-        page.select_option('#pfCat', label='装饰材料')
-        page.wait_for_function("document.querySelector('#pfBody').innerText.includes('毯子')")
-        check('SKU 前缀弹窗：装饰材料有 毯子 / 枕头 / 玻璃 … 子类前缀', all(x in page.inner_text('#pfBody') for x in ('毯子', '枕头', '玻璃', 'BL', 'PW', 'GS')))
-        page.click('#x')
+        page.click('#btnCatAdmin')
+        page.wait_for_selector('#caSaveCat')
+        page.click('#modalBody .chip:has-text("装饰材料")')
+        page.wait_for_function("document.querySelector('#modalBody').innerText.includes('毯子')")
+        check('类目管理弹窗：装饰材料有 毯子 / 枕头 / 玻璃 … 子类及前缀', all(x in page.inner_text('#modalBody') for x in ('毯子', '枕头', '玻璃', 'BL', 'PW', 'GS')))
+        # 新建类目 + 子类 + 字段（含适用子类）
+        dialogs.clear()
+        prompt_answers.append('E2E 地毯')
+        page.click('#caNewCat')
+        page.wait_for_function("document.querySelector('#caName') && document.querySelector('#caName').value === 'E2E 地毯'")
+        check('新建类目', ctx.db.scalar("SELECT COUNT(*) FROM categories WHERE name='E2E 地毯'") == 1)
+        page.fill('#caSubName', '手工'); page.fill('#caSubPf', 'HM'); page.click('#caAddSub')
+        page.wait_for_function("document.querySelector('#modalBody').innerText.includes('手工') && document.querySelector('#caSubName').value === ''")
+        page.fill('#caSubName', '机织'); page.fill('#caSubPf', 'MC'); page.click('#caAddSub')
+        page.wait_for_function("document.querySelector('#modalBody').innerText.includes('机织') && document.querySelector('#caSubName').value === ''")
+        page.fill('#cfLabel', '针数'); page.select_option('#cfType', 'number')
+        page.check('#cfApplies input[value="手工"]'); page.click('#cfSave')
+        page.wait_for_function("document.querySelector('#modalBody').innerText.includes('针数')")
+        check('新建子类（带 SKU 前缀）和只适用于「手工」的字段', ctx.db.scalar("SELECT applies_to FROM category_fields WHERE field_label='针数'") == '手工'
+              and ctx.db.scalar("SELECT COUNT(*) FROM subcategory_prefixes WHERE subcategory_value IN ('手工','机织')") == 2)
+        page.fill('#caPf', 'EG'); page.click('#caSavePf')
+        page.wait_for_function("document.querySelector('#caPf').value === 'EG'")
+        page.click('#caClose')
+        page.wait_for_selector('#chips')
 
         page.locator('tr.row', has_text='SLSP000001').click()
         page.wait_for_selector('#btnDel')
@@ -659,6 +691,70 @@ def main():
         page.wait_for_function("document.body.innerText.includes('导入完成')")
         check('PI 导入：成交单、产品、客户阶段', ctx.db.scalar("SELECT status FROM quotes WHERE quote_no='SL-E2E-US'") == 'accepted'
               and ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='CSL-10100'") == 1)
+
+        # ---------- 规格字段按子类显示 / 客户下拉缩写 / 供应商档案 ----------
+        print('规格联动 / 客户下拉 / 供应商')
+        rug = ctx.db.scalar("SELECT id FROM categories WHERE name='E2E 地毯'")
+        page.goto(base + '/#product/new')
+        page.wait_for_selector('#pCat')
+        page.select_option('#pCat', str(rug))
+        page.click('[data-tab=specs]')
+        page.wait_for_selector('#fieldsBox select')
+        sub_id = ctx.db.scalar("SELECT id FROM category_fields WHERE category_id=? AND field_key='subcategory'", (rug,))
+        needle_id = ctx.db.scalar("SELECT id FROM category_fields WHERE field_label='针数'")
+        page.select_option('#fv_%d' % sub_id, '机织')
+        check('选了「机织」后，只适用于「手工」的字段「针数」被收起', not page.locator('#fv_%d' % needle_id).is_visible())
+        page.select_option('#fv_%d' % sub_id, '手工')
+        check('选「手工」后「针数」显示', page.locator('#fv_%d' % needle_id).is_visible())
+        page.select_option('#fv_%d' % sub_id, '机织')
+        page.check('#showAllFields')
+        check('勾选「显示全部字段」后全部显示', page.locator('#fv_%d' % needle_id).is_visible())
+        page.click('[data-tab=overview]')
+        page.click('#btnHs')
+        page.wait_for_function("document.querySelector('#toast').textContent.includes('HS 编码查询网址')")
+        check('没配置 HS 查询网址时有明确提示', True)
+
+        page.goto(base + '/#quotenew')
+        page.wait_for_selector('#qCust')
+        page.click('#qCust')
+        page.wait_for_selector('#custSug .sugitem')
+        check('点开客户框就是完整下拉列表', page.locator('#custSug .sugitem').count() > 10)
+        page.fill('#qCust', 'fc7')
+        page.wait_for_function("document.querySelector('#custSug .sugitem') && document.querySelector('#custSug').innerText.includes('Fake Company 7 Ltd')")
+        check('输入英文缩写 fc7 能补全出 Fake Company 7 Ltd', 'Fake Company 7 Ltd' in page.inner_text('#custSug .sugitem'))
+        page.press('#qCust', 'Enter')
+        page.wait_for_selector('#custChange')
+        check('回车选中后显示已选客户', 'Fake Company 7' in page.inner_text('#custBox'))
+
+        page.goto(base + '/#vendors')
+        page.wait_for_selector('#btnNewVendor')
+        page.click('#btnNewVendor')
+        page.fill('#nvName', 'E2E 灯具厂'); page.fill('#nvWx', 'wx_e2e')
+        page.click('#nvOk')
+        page.wait_for_selector('#btnArchive')
+        check('新建供应商并进入详情页', ctx.db.scalar("SELECT COUNT(*) FROM suppliers WHERE name='E2E 灯具厂'") == 1)
+        ctx.vendors.async_ocr = False
+        ctx.vendors.ocr_fn = lambda path: ('done', '这款筒灯含税价 28 元 起订量 300', '')
+        png = os.path.join(tmp, 'chat.png')
+        from imgutil import PNG_RED_BOX
+        open(png, 'wb').write(PNG_RED_BOX)
+        page.fill('#cProject', 'E2E Hotel'); page.fill('#cTitle', '旺旺报价')
+        page.set_input_files('#cFile', png)
+        page.wait_for_selector('#stagedBox img')
+        page.click('#btnArchive')
+        page.wait_for_selector('#chatList img[data-zoom]')
+        check('聊天截图归档：图片落盘、OCR 文字入库', ctx.db.scalar("SELECT COUNT(*) FROM supplier_chats WHERE ocr_text LIKE '%起订量 300%' AND project='E2E Hotel'") == 1)
+        shot('14_vendor_detail')
+        page.goto(base + '/#vendors')
+        page.click('#tabSeg button[data-t=chats]')
+        page.fill('#cqText', '起订量'); page.click('#cqGo')
+        page.wait_for_selector('#cqBody img')
+        check('按截图文字能搜到供应商和原图', 'E2E 灯具厂' in page.inner_text('#cqBody'))
+        page.click('#tabSeg button[data-t=project]')
+        page.fill('#pvName', 'E2E Hotel'); page.click('#pvGo')
+        page.wait_for_function("document.querySelector('#pvBody').innerText.includes('E2E 灯具厂')")
+        check('按项目对比能看到这家供应商', True)
+        ctx.vendors.async_ocr = True
 
         # ---------- 设置页：汇率 / 导出 / 升级 ----------
         page.goto(base + '/#settings')

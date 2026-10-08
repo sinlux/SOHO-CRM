@@ -14,6 +14,11 @@ export async function render(root, _arg, isCurrent) {
     <div class="flex" style="margin-top:14px"><button class="primary" id="btnSave">保存</button>
       <button id="btnTest">测试连通性</button></div><div id="testOut" style="margin-top:10px"></div></div>
 
+    <div class="card"><h2>HS 编码查询</h2>
+      <p class="muted" style="margin-bottom:8px">填入海关（或报关行）提供的 HS 编码查询网站网址。产品页「HS 编码」旁的「查询」按钮会用这个网址在新标签页打开。
+        网址里可以写 <code>{keyword}</code>，会被替换成产品名称（例如 <code>https://example.com/search?q={keyword}</code>）；不写就直接打开首页。</p>
+      <div class="flex"><input id="sHs" value="${esc(s.hs_lookup_url)}" placeholder="https://…" style="max-width:560px"><button id="btnSaveHs">保存</button></div></div>
+
     <div class="card"><h2>报价单抬头 / 收款信息 / WhatsApp 模板</h2>
       <p class="muted" style="margin-bottom:10px">抬头和联系方式印在报价单 PDF / Excel 的顶部和页脚；收款信息单独成框，印在条款下方。</p>
       <div class="flex" style="margin-bottom:12px"><img id="logoImg" src="/api/settings/quote/logo?t=${Date.now()}" alt="LOGO" style="height:52px;max-width:260px;object-fit:contain;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff">
@@ -84,6 +89,7 @@ export async function render(root, _arg, isCurrent) {
   if ($('#btnLogoReset')) $('#btnLogoReset').onclick = async () => {
     try { await api('/api/settings/quote/logo', 'DELETE', {}); toast('已恢复默认 LOGO'); render(root, _arg, isCurrent); } catch (err) { toast(err.message); }
   };
+  $('#btnSaveHs').onclick = async () => { try { await api('/api/settings', 'PUT', {hs_lookup_url: $('#sHs').value}); toast('已保存'); } catch (e) { toast(e.message); } };
   $('#btnSaveQuote').onclick = () => saveQuote({});
   $('#btnResetWa').onclick = () => saveQuote({whatsapp_template: ''});
   $('#btnTest').onclick = async () => {

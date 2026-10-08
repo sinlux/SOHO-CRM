@@ -15,6 +15,7 @@ export async function render(root, _arg, isCurrent) {
     <div class="flex" style="margin-top:14px"><input id="fSearch" placeholder="搜索：单号 / 客户 / 产品 SKU 或名称" style="max-width:380px" value="${esc(state.search)}"><span class="muted" id="cnt"></span></div></div>
     <div class="card" id="listBox">加载中…</div>`;
   const load = async () => {
+    if (!$('#fSearch')) return;                       // 防抖定时器触发时用户可能已经切走页面了
     state.search = $('#fSearch').value.trim();
     const p = new URLSearchParams({limit: PAGE, offset: state.offset});
     if (state.search) p.set('search', state.search);

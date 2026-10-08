@@ -17,6 +17,82 @@ def register(r):
     def categories(ctx, req):
         return {'categories': ctx.catalog.categories()}
 
+    @r.post('/api/categories')
+    def create_cat(ctx, req):
+        b = req.json()
+        return {'ok': True, 'id': ctx.catalog.create_category(b.get('name'), b.get('icon'), b.get('prefix'))}
+
+    @r.put('/api/categories/{id}')
+    def update_cat(ctx, req):
+        b = req.json()
+        ctx.catalog.update_category(_id(req), b.get('name'), b.get('icon'))
+        return {'ok': True}
+
+    @r.delete('/api/categories/{id}')
+    def delete_cat(ctx, req):
+        ctx.catalog.delete_category(_id(req))
+        return {'ok': True}
+
+    @r.post('/api/categories/{id}/fields')
+    def create_field(ctx, req):
+        b = req.json()
+        return {'ok': True, 'id': ctx.catalog.create_field(_id(req), b.get('label'), b.get('type'), b.get('unit'), b.get('options'),
+                                                          b.get('placeholder'), b.get('applies_to'))}
+
+    @r.put('/api/fields/{id}')
+    def update_field(ctx, req):
+        b = req.json()
+        ctx.catalog.update_field(_id(req), **{k: b[k] for k in ('label', 'unit', 'options', 'placeholder', 'applies_to') if k in b})
+        return {'ok': True}
+
+    @r.get('/api/fields/{id}/usage')
+    def field_usage(ctx, req):
+        return {'products_with_value': ctx.catalog.field_usage(_id(req))}
+
+    @r.delete('/api/fields/{id}')
+    def delete_field(ctx, req):
+        ctx.catalog.delete_field(_id(req))
+        return {'ok': True}
+
+    @r.post('/api/fields/{id}/move')
+    def move_field(ctx, req):
+        ctx.catalog.move_field(_id(req), req.json().get('direction'))
+        return {'ok': True}
+
+    @r.get('/api/categories/{id}/subcategories')
+    def subs(ctx, req):
+        return {'subcategories': ctx.catalog.subcategories(_id(req))}
+
+    @r.post('/api/categories/{id}/subcategories')
+    def add_sub(ctx, req):
+        b = req.json()
+        ctx.catalog.add_subcategory(_id(req), b.get('name'), b.get('prefix'))
+        return {'ok': True}
+
+    @r.put('/api/categories/{id}/subcategories')
+    def rename_sub(ctx, req):
+        b = req.json()
+        ctx.catalog.rename_subcategory(_id(req), b.get('old'), b.get('new'), b.get('prefix'))
+        return {'ok': True}
+
+    @r.post('/api/categories/{id}/subcategories/delete')
+    def delete_sub(ctx, req):
+        return {'ok': True, **ctx.catalog.delete_subcategory(_id(req), req.json().get('name'))}
+
+    @r.get('/api/hs_codes')
+    def hs_codes(ctx, req):
+        """本库里已经用过的 HS 编码（按使用次数排序，带几个示例产品）：同类产品直接复用，不用再查。"""
+        q = req.arg('q').strip()
+        where, args = "TRIM(COALESCE(hs_code,''))<>''", []
+        if q:
+            like = '%' + q.replace('%', r'\%').replace('_', r'\_') + '%'
+            where += " AND (hs_code LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\' OR spec_text LIKE ? ESCAPE '\\')"
+            args = [like] * 3
+        rows = ctx.db.query('SELECT hs_code, COUNT(*) AS n, GROUP_CONCAT(name, \' / \') AS names FROM products WHERE %s GROUP BY hs_code ORDER BY n DESC, hs_code LIMIT 30' % where, args)
+        for r in rows:
+            r['names'] = ' / '.join((r['names'] or '').split(' / ')[:3])[:120]
+        return {'codes': rows}
+
     @r.get('/api/categories/{id}/fields')
     def cat_fields(ctx, req):
         return {'fields': ctx.catalog.fields(_id(req))}

@@ -350,8 +350,9 @@ class ProductService:
 class SupplierService:
     """每个产品可记录多个供应商人民币报价，标记一个"采纳"。采纳会同步为产品当前成本并写入价格历史。"""
 
-    def __init__(self, db, uploads_dir, products, history):
+    def __init__(self, db, uploads_dir, products, history, book):
         self.db = db
+        self.book = book
         self.dir = uploads_dir
         self.products = products
         self.history = history
@@ -377,9 +378,10 @@ class SupplierService:
         shot = rawimg.save_data_url(self.dir, d['screenshot_data'], 'sq_') if d.get('screenshot_data') else None
         try:
             with self.db.tx():
-                qid = self.db.execute("""INSERT INTO supplier_quotes(product_id,supplier_name,price_cny,quote_date,
-                    screenshot_path,remark,is_adopted) VALUES(?,?,?,?,?,?,0)""",
-                                      (pid, name, price, date, 'uploads/' + shot if shot else None,
+                vid = self.book.ensure(name)                     # 供应商档案：没有就自动建一份最简的，之后到「供应商」菜单里补资料
+                qid = self.db.execute("""INSERT INTO supplier_quotes(product_id,supplier_name,supplier_id,project,price_cny,quote_date,
+                    screenshot_path,remark,is_adopted) VALUES(?,?,?,?,?,?,?,?,0)""",
+                                      (pid, name, vid, _txt(d.get('project')), price, date, 'uploads/' + shot if shot else None,
                                        _txt(d.get('remark')) or None)).lastrowid
                 if d.get('is_adopted'):
                     self._adopt(qid)

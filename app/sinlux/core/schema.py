@@ -15,6 +15,13 @@ PRODUCT_NEW_COLUMNS = [
     ('gross_weight', 'REAL'), ('net_weight', 'REAL'),
 ]
 
+# 第五批之后追加的列（旧库迁移时按此补）：(表, 列名, 类型定义)
+LATER_COLUMNS = [
+    ('category_fields', 'applies_to', "TEXT DEFAULT ''"),           # 该字段适用的子类（| 分隔）；空 = 所有子类都显示
+    ('supplier_quotes', 'supplier_id', 'INTEGER REFERENCES suppliers(id) ON DELETE SET NULL'),
+    ('supplier_quotes', 'project', "TEXT DEFAULT ''"),               # 询价项目（自由文字）：一个项目问几十家，最后选一家
+]
+
 STAGES = ['潜在', '已联系', '已报价', '已寄样', '成交', '复购', '沉睡']
 
 # 旧版里 pi_import / quote_service 曾把英文 key 写进 stage 列，迁移时统一成中文
@@ -179,6 +186,24 @@ CREATE TABLE IF NOT EXISTS supplier_quotes(
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_supplier_quotes_product ON supplier_quotes(product_id);
+CREATE TABLE IF NOT EXISTS suppliers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  contact TEXT DEFAULT '', phone TEXT DEFAULT '', wechat TEXT DEFAULT '', email TEXT DEFAULT '',
+  platform TEXT DEFAULT '', link TEXT DEFAULT '', location TEXT DEFAULT '',
+  main_products TEXT DEFAULT '', status TEXT DEFAULT 'inquiring', rating INTEGER,
+  notes TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS supplier_chats(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier_id INTEGER NOT NULL,
+  project TEXT DEFAULT '', title TEXT DEFAULT '', note TEXT DEFAULT '',
+  image_file TEXT DEFAULT '', thumb_file TEXT DEFAULT '',
+  ocr_text TEXT DEFAULT '', ocr_status TEXT DEFAULT '', ocr_error TEXT DEFAULT '',
+  chat_date TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_supplier_chats_supplier ON supplier_chats(supplier_id);
 CREATE TABLE IF NOT EXISTS category_sku_prefixes(
   category_id INTEGER PRIMARY KEY,
   prefix TEXT NOT NULL,

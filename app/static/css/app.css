@@ -218,7 +218,7 @@ td.chk,th.chk{width:36px;padding-right:0}
 .sug{position:absolute;left:0;right:0;z-index:30;background:var(--card);border-radius:var(--r-md);box-shadow:0 12px 36px rgba(67,57,46,.2);margin-top:4px;max-height:360px;overflow:auto}
 #custSug{background:var(--card);border-radius:var(--r-md);margin-top:4px}
 .sugitem{display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer;border-radius:var(--r-sm)}
-.sugitem:hover{background:var(--leaf-soft)}
+.sugitem:hover,.sugitem.on{background:var(--leaf-soft)}
 .chosen{display:inline-flex;align-items:center;gap:8px;background:var(--leaf-soft);padding:5px 12px;border-radius:999px}
 code{background:var(--card-2);border:1px solid var(--line-2);border-radius:6px;padding:0 5px;font-size:12px}
 @media (max-width:1000px){.qrow{grid-template-columns:60px 1fr 1fr}.qrow .qmain{grid-column:2/4}}

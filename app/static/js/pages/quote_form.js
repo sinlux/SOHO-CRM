@@ -1,5 +1,6 @@
 import {$, $$, esc, api, nav, toast, avatar, mulCents, fmtCents} from '../lib.js';
 import {thumb} from './products.js';
+import {customerCombo} from '../combo.js';
 
 // 报价单编辑器（新建 / 编辑共用）：
 //   #quotenew            新建
@@ -38,7 +39,7 @@ export async function render(root, arg, isCurrent) {
     <div class="flex">${isEdit ? '<button class="primary" id="btnSave">保存修改</button>' : '<button id="btnDraft">保存为草稿</button><button class="primary" id="btnCreate">创建报价单</button>'}</div></div>
     <div class="grid" style="margin-top:16px">
       <div class="field"><label>客户 *</label><div class="flex nowrap" id="custBox">${customer ? chosen(customer) : ''}</div>
-        <input id="qCust" placeholder="输入公司名 / 联系人 / 邮箱搜索" autocomplete="off" ${customer ? 'style="display:none"' : ''}><div id="custSug"></div></div>
+        <div style="position:relative"><input id="qCust" placeholder="点击选择客户，或输入公司名 / 联系人 / 邮箱 / 英文缩写" autocomplete="off" ${customer ? 'style="display:none"' : ''}><div class="sug" id="custSug" style="display:none"></div></div></div>
       <div class="field"><label>币种</label><select id="qCur">${[...new Set(['USD', 'CNY', q?.currency].filter(Boolean))].map(c => `<option ${(q ? q.currency : 'USD') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>有效期（天）</label><input id="qValid" type="number" min="0" value="${q ? q.valid_days : 30}"></div>
       <div class="field"><label>交期</label><input id="qLead" list="dlLead" value="${esc(q?.lead_time || '')}" placeholder="如 30-35 days after deposit"><datalist id="dlLead">${LEAD.map(x => `<option>${x}</option>`).join('')}</datalist></div>
@@ -46,6 +47,7 @@ export async function render(root, arg, isCurrent) {
       <div class="field"><label>贸易条款</label><input id="qShip" list="dlShip" value="${esc(q?.shipping_terms || '')}"><datalist id="dlShip">${TERMS_TRADE.map(x => `<option>${x}</option>`).join('')}</datalist></div></div></div>
 
   <div class="card"><div class="sec-title"><h3>产品明细</h3><span class="muted">价格是创建时的快照，之后改产品价格不会影响这张报价单</span></div>
+    <p class="muted" style="margin:0 0 8px">每一行：选了产品库里的产品，<b>单价会自动带出该产品的建议价</b>（可以直接改成这个客户的价格）；<b>小计 = 数量 × 单价</b>，自动算，不用手填。库里没有的项目（运费等）点「手动加一行」自己填。</p>
     <div class="field" style="position:relative;max-width:520px"><label>从产品库添加</label><input id="pSearch" placeholder="搜索 SKU / 名称 / 系列，回车添加第一个结果" autocomplete="off"><div class="sug" id="pSug"></div></div>
     <div id="itemsBox" style="margin-top:12px"></div>
     <div class="flex between" style="margin-top:12px"><button id="btnRow">＋ 手动加一行</button><div style="font-size:16px">合计：<b class="big-total" id="qTotal">0.00</b></div></div>
@@ -64,8 +66,8 @@ export async function render(root, arg, isCurrent) {
       <div class="qnum"><label>数量</label><input data-k="quantity" inputmode="decimal" value="${esc(r.quantity)}"></div>
       <div class="qnum"><label>单位</label><input data-k="unit" value="${esc(r.unit)}"></div>
       <div class="qnum"><label>单价</label><input data-k="unit_price" inputmode="decimal" value="${esc(r.unit_price)}"></div>
-      <div class="qamt"><label>金额</label><b data-amt>0.00</b></div>
-      <div class="qtools"><button class="small" data-act="up" title="上移" ${n === 0 ? 'disabled' : ''}>↑</button><button class="small" data-act="down" title="下移" ${n === rows.length - 1 ? 'disabled' : ''}>↓</button><button class="small danger" data-act="del" title="删除这行">✕</button></div></div>`).join('');
+      <div class="qamt"><label title="小计 = 数量 × 单价，自动计算，不用手填">小计</label><b data-amt>0.00</b></div>
+      <div class="qtools"><button class="small" data-act="up" title="这一行上移" ${n === 0 ? 'disabled' : ''}>↑</button><button class="small" data-act="down" title="这一行下移" ${n === rows.length - 1 ? 'disabled' : ''}>↓</button><button class="small danger" data-act="del" title="删除这一行">✕</button></div></div>`).join('');
     recalc();
   };
   const recalc = () => {
@@ -138,20 +140,10 @@ export async function render(root, arg, isCurrent) {
   // ---------- 客户选择 ----------
   const bindChange = () => { const b = $('#custChange'); if (b) b.onclick = () => { customer = null; $('#custBox').innerHTML = ''; $('#qCust').style.display = ''; $('#qCust').focus(); }; };
   if (isEdit) { const b = $('#custChange'); if (b) b.style.display = 'none'; } else bindChange();
-  let ct, cfound = [];
-  $('#qCust').oninput = () => { clearTimeout(ct); ct = setTimeout(async () => {
-    const kw = $('#qCust').value.trim();
-    if (kw.length < 1) { $('#custSug').innerHTML = ''; return; }
-    cfound = (await api('/api/customers?limit=8&search=' + encodeURIComponent(kw))).customers;
-    $('#custSug').innerHTML = cfound.length ? cfound.map((c, i) => `<div class="sugitem" data-i="${i}">${avatar(c.company || c.name, 30)}<div><b>${esc(c.company || c.name)}</b><div class="muted">${esc(c.country)} ${esc((c.emails || '').split(' ')[0])}</div></div></div>`).join('') : '<div class="muted" style="padding:8px">没有匹配的客户，请先在「录入客户」里创建</div>';
-  }, 220); };
-  $('#custSug').onclick = e => {
-    const it = e.target.closest('[data-i]');
-    if (!it) return;
-    const c = cfound[Number(it.dataset.i)];
+  customerCombo($('#qCust'), $('#custSug'), c => {
     customer = {id: c.id, label: c.company || c.name};
-    $('#custBox').innerHTML = chosen(customer); $('#qCust').style.display = 'none'; $('#qCust').value = ''; $('#custSug').innerHTML = ''; bindChange();
-  };
+    $('#custBox').innerHTML = chosen(customer); $('#qCust').style.display = 'none'; $('#qCust').value = ''; bindChange();
+  });
 
   // ---------- 保存 ----------
   const body = status => ({customer_id: customer ? customer.id : null, currency: cur(), valid_days: $('#qValid').value, lead_time: $('#qLead').value,

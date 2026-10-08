@@ -9,7 +9,7 @@ from .util import ApiError
 
 # 设置页可读写的键；密钥类只返回"是否已设置+末4位"，不回传明文
 SECRET_KEYS = ('deepseek_key', 'tavily_key')
-PLAIN_KEYS = ('deepseek_model',)
+PLAIN_KEYS = ('deepseek_model', 'hs_lookup_url')
 
 
 def _hint(v):
@@ -32,6 +32,7 @@ def register(r):
     def get_settings(ctx, req):
         out = {k: ctx.db.get_setting(k) for k in PLAIN_KEYS}
         out['deepseek_model'] = out['deepseek_model'] or 'deepseek-chat'
+        out['hs_lookup_url'] = out['hs_lookup_url'] or ''
         for k in SECRET_KEYS:
             v = ctx.db.get_setting(k)
             out[k + '_set'] = bool(v)
@@ -44,6 +45,8 @@ def register(r):
         for k in SECRET_KEYS + PLAIN_KEYS:
             if k in b and b[k] is not None:
                 v = str(b[k]).strip()
+                if k == 'hs_lookup_url' and v and (not re.match(r'^https?://[^\s]+$', v) or len(v) > 500):
+                    raise ApiError('HS 编码查询网址必须以 http:// 或 https:// 开头（可用 {keyword} 代表要查的产品名）')
                 if k in SECRET_KEYS and not v:
                     continue          # 空值 = 保持原样；要清除请用 clear_<key>
                 ctx.db.set_setting(k, v)

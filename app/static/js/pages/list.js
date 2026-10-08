@@ -23,6 +23,7 @@ export async function render(root, _arg, isCurrent) {
 
   let timer;
   const load = async () => {
+    if (!$('#fSearch')) return;
     state.search = $('#fSearch').value.trim(); state.lv = $('#fLv').value;
     state.country = $('#fCountry').value; state.stage = $('#fStage').value;
     const p = new URLSearchParams({limit: PAGE, offset: state.offset});
