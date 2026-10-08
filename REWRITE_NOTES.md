@@ -111,3 +111,9 @@ tests/                   unittest（249项）+ browser_e2e.py（Playwright 无�
 - 迁移（`migrate/quotemaster.py`）：整个迁移一个事务，图片在事务后处理（失败只给提示）；识别重复：SKU 不区分大小写、客户按邮箱/公司名/仅姓名、供应商比价按 产品+供应商+价格+日期、旧报价按 OLD-xxxx、备注按原文；旧成交报价的成交价写入售价历史（来源 OLD-xxxx）；旧 EUR 报价原币种保留。迁移前自动备份。
 - 重启：升级/回退后需用户手动关闭窗口重开（没做自动重启——Windows 下 execv 不可靠，且手动更稳）。
 - 未验证：真实 SQLCipher 解密（云端没有 sqlcipher3，用同结构的普通 sqlite 库测迁移逻辑）；Windows 上的升级覆盖正在运行的 .py（Python 已加载的模块不受影响，重启后生效）；真实旧 QuoteMaster 库的列是否与我按旧代码推断的完全一致（缺列会被容忍，但没见过真库）。
+
+## 启动脚本修复（用户验收时发现）
+- 现象：用户电脑没装 Python，启动.bat 走「自动下载便携版」，三个镜像全部失败，报 `'powershell' 不是内部或外部命令`——**根因是用户这台电脑的 PATH 里找不到 powershell，不是网络问题**（三次失败的原因相同）。
+- 修复：① 完整安装包内置官方 Python 3.12（nuget.org 上 PSF 发布的 `python` 包，精简后放 `python/`），开箱即用，启动.bat 优先用它（app/libs 里的 Pillow 等是 cp312 编译的，系统装别的版本会不匹配）；② 下载兜底改用 `%SystemRoot%\System32\curl.exe`、powershell 全路径，解压失败再试 `tar`；③ 下载不下来时给出手动安装指引。
+- 生成：`python tools/make_release.py HEAD 输出目录 --python python.3.12.10.nupkg`。
+- 未在真实 Windows 上验证 bat 的新逻辑（云端只能检查语法/编码：纯 ASCII + CRLF）。
