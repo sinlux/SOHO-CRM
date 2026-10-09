@@ -1,5 +1,5 @@
 import {openCatalogAdmin} from './catalog_admin.js';
-import {$, $$, esc, api, upload, nav, toast} from '../lib.js';
+import {$, $$, esc, api, upload, nav, toast, modal, closeModal} from '../lib.js';
 import {money} from './products.js';
 
 // 产品详情页布局（参照 Odoo / Akeneo / Salesforce CPQ 等的产品主数据页）：
@@ -95,7 +95,8 @@ export async function render(root, arg, isCurrent) {
       </div>
       <div class="field" style="margin-top:14px"><label>规格描述（主规格字段：尺寸、材质、参数、颜色、包装等都可以写在这里）</label><textarea id="pSpec" style="min-height:150px">${esc(p.spec_text)}</textarea></div>
       <div class="field" style="margin-top:14px"><label>内部备注（只有你自己看得到，不会印在报价单上，也不会给客户）</label>
-        <textarea id="pRemark" placeholder="例：和供应商沟通的要点（含税价、起订量、交期、付款方式）、报价背景（这个价是给哪个客户/项目的）、质量问题、特别注意事项、下次跟进该问什么……">${esc(p.remark || '')}</textarea></div></div>
+        <textarea id="pRemark" placeholder="例：和供应商沟通的要点（含税价、起订量、交期、付款方式）、报价背景（这个价是给哪个客户/项目的）、质量问题、特别注意事项、下次跟进该问什么……&#10;懒得整理？在这里直接 Ctrl+V 粘贴聊天 / 报价截图就行（文字会在本机自动识别，之后能搜到）">${esc(p.remark || '')}</textarea>
+        <div id="shotBox" class="flex" style="margin-top:8px;align-items:flex-start"></div></div></div>
 
       <div class="tabpanel" data-panel="specs"><p class="muted" style="margin-bottom:10px">结构化规格全部选填，用于筛选和对比；详细描述写在「概览」的规格描述里。选了「子类」后，只显示和该子类有关的规格项。</p>
         <div class="flex" style="margin-bottom:10px"><button id="btnManageFields">⚙ 管理子类和规格字段…</button><label class="flex"><input type="checkbox" id="showAllFields"> 显示全部字段</label><span class="muted" id="hiddenInfo"></span></div>
@@ -169,6 +170,7 @@ export async function render(root, arg, isCurrent) {
   ['dragleave', 'drop'].forEach(ev => gd.addEventListener(ev, e => { e.preventDefault(); gd.classList.remove('over'); }));
   gd.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
   const onPaste = e => {
+    if (e.target && e.target.id === 'pRemark') return;                 // 备注框里粘贴的截图归备注，不进相册
     const files = [...(e.clipboardData || {}).items || []].filter(it => it.type.startsWith('image/')).map(it => it.getAsFile());
     if (files.length) { e.preventDefault(); addFiles(files); }
   };
@@ -270,13 +272,12 @@ export async function render(root, arg, isCurrent) {
   })();
   $('#btnHs').onclick = async () => {
     const url = (await api('/api/settings')).hs_lookup_url;
-    if (!url) {
-      toast('还没设置 HS 编码查询网址：到「设置」页填入海关提供的查询网站（可用 {keyword} 代表产品名）');
-      return;
-    }
+    if (!url) { toast('还没设置 HS 编码查询网址：到「设置」页填入'); return; }
     const kw = $('#pName').value.trim() || $('#pHs').value.trim();
+    let copied = false;
+    if (!url.includes('{keyword}') && kw) { try { await navigator.clipboard.writeText(kw); copied = true; } catch (e) { /* 浏览器不允许写剪贴板：忽略 */ } }
     window.open(url.includes('{keyword}') ? url.replace('{keyword}', encodeURIComponent(kw)) : url, '_blank', 'noopener');
-    $('#hsHint').textContent = '在查询网站里找到编码后，复制粘贴到这里。';
+    $('#hsHint').textContent = (copied ? `已把「${kw}」复制到剪贴板，在查询网站的搜索框里粘贴即可。` : '') + '找到编码后复制粘贴到这里；正式报关请以海关结果为准。';
   };
   const autoSku = async (silent) => {
     const sf = subField(), el = sf && $(`#fv_${sf.id}`);
@@ -298,6 +299,44 @@ export async function render(root, arg, isCurrent) {
     if (sf && e.target.id === 'fv_' + sf.id && isNew && ($('#pSku').value === '' || $('#pSku').value === lastAuto)) autoSku(true);
   });
 
+  // ---------- 内部备注截图 ----------
+  let shots = isNew ? [] : (await api(`/api/products/${pid}/shots`)).shots;
+  const pending = [];                                  // 新建产品时先攒在这里，创建成功后再上传
+  const OCR = {pending: ['识别中…', 'warn'], done: ['已识别', 'good'], unavailable: ['无 OCR', 'warn'], failed: ['识别失败', 'bad']};
+  const drawShots = () => {
+    $('#shotBox').innerHTML = shots.map(x => `<span style="position:relative" title="${esc(x.ocr_text || '')}"><img src="${esc(x.thumb_url)}" data-shot="${esc(x.url)}" style="height:84px;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">
+        <span class="tag ${(OCR[x.ocr_status] || ['', ''])[1]}" style="position:absolute;left:4px;bottom:4px;font-size:10px">${(OCR[x.ocr_status] || ['', ''])[0]}</span>
+        <button class="small danger" data-shotdel="${x.id}" style="position:absolute;top:-6px;right:-6px">✕</button></span>`).join('')
+      + pending.map((raw, i) => `<span style="position:relative"><img src="${raw}" style="height:84px;border-radius:8px;border:1px dashed var(--line)"><span class="tag warn" style="position:absolute;left:4px;bottom:4px;font-size:10px">保存后上传</span>
+        <button class="small danger" data-pendel="${i}" style="position:absolute;top:-6px;right:-6px">✕</button></span>`).join('');
+  };
+  const addShot = raw => {
+    if (isNew) { pending.push(raw); markDirty(); drawShots(); return; }
+    api(`/api/products/${pid}/shots`, 'POST', {image_base64: raw}).then(r => { shots = r.shots; drawShots(); pollShots(); }).catch(e => toast(e.message));
+  };
+  let polls = 0;
+  const pollShots = () => {
+    if (!shots.some(x => x.ocr_status === 'pending') || polls++ > 20) return;
+    setTimeout(async () => {
+      if (!$('#shotBox')) return;
+      try { shots = (await api(`/api/products/${pid}/shots`)).shots; drawShots(); } catch (e) { return; }
+      pollShots();
+    }, 3000);
+  };
+  $('#pRemark').addEventListener('paste', e => {
+    const items = [...(e.clipboardData || {}).items || []].filter(it => it.type.startsWith('image/'));
+    if (!items.length) return;                         // 纯文字照常粘贴
+    e.preventDefault();
+    items.forEach(it => { const rd = new FileReader(); rd.onload = () => addShot(rd.result); rd.readAsDataURL(it.getAsFile()); });
+  });
+  $('#shotBox').onclick = async e => {
+    const z = e.target.closest('[data-shot]'), d = e.target.closest('[data-shotdel]'), pd = e.target.closest('[data-pendel]');
+    if (z) { modal(`<div style="text-align:center"><img src="${esc(z.dataset.shot)}" style="max-width:100%;max-height:78vh"></div><div class="flex" style="margin-top:10px;justify-content:center"><a class="ext" href="${esc(z.dataset.shot)}" target="_blank" rel="noopener">在新标签页打开原图</a><button id="zx">关闭</button></div>`, true); $('#zx').onclick = closeModal; }
+    else if (pd) { pending.splice(Number(pd.dataset.pendel), 1); drawShots(); }
+    else if (d && confirm('删除这张备注截图？')) { try { await api('/api/product_shots/' + d.dataset.shotdel, 'DELETE', {}); shots = shots.filter(x => String(x.id) !== d.dataset.shotdel); drawShots(); } catch (err) { toast(err.message); } }
+  };
+  drawShots(); pollShots();
+
   // ---------- 保存 ----------
   $('#btnSave').onclick = async () => {
     const pr = parseFloat($('#pProfit').value);
@@ -309,7 +348,11 @@ export async function render(root, arg, isCurrent) {
       gross_weight: num('#pGw'), net_weight: num('#pNw'), field_values: collectValues(), images: images.map(i => i.id)};
     $('#btnSave').disabled = true;
     try {
-      if (isNew) { const r = await api('/api/products', 'POST', body); toast('产品已创建'); nav('product', r.id); }
+      if (isNew) {
+        const r = await api('/api/products', 'POST', body);
+        for (const raw of pending) { try { await api(`/api/products/${r.id}/shots`, 'POST', {image_base64: raw}); } catch (e) { toast('有一张备注截图没存上：' + e.message); } }
+        toast('产品已创建'); nav('product', r.id);
+      }
       else { await api('/api/products/' + pid, 'PUT', body); toast('已保存'); render(root, arg, isCurrent); }
     } catch (e) { toast(e.message); $('#btnSave').disabled = false; }
   };
@@ -323,7 +366,7 @@ export async function render(root, arg, isCurrent) {
   $('#btnDel').onclick = async () => {
     try {
       const {impact: i} = await api(`/api/products/${pid}/impact`);
-      if (!confirm(`确定删除「${p.sku} ${p.name}」？\n将同时永久删除：价格记录 ${i.price_records} 条、供应商报价 ${i.supplier_quotes} 条、图片 ${i.images} 张、文档 ${i.files} 个。\n已有的报价单明细（${i.quote_items} 条）会保留为快照。\n此操作不可恢复。`)) return;
+      if (!confirm(`确定删除「${p.sku} ${p.name}」？\n将同时永久删除：价格记录 ${i.price_records} 条、供应商报价 ${i.supplier_quotes} 条、图片 ${i.images} 张、文档 ${i.files} 个${i.note_shots ? '、备注截图 ' + i.note_shots + ' 张' : ''}。\n已有的报价单明细（${i.quote_items} 条）会保留为快照。\n此操作不可恢复。`)) return;
       await api('/api/products/' + pid, 'DELETE', {confirm: true});
       toast('已删除'); nav('products');
     } catch (e) { toast(e.message); }

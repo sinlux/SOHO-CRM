@@ -204,6 +204,14 @@ CREATE TABLE IF NOT EXISTS supplier_chats(
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_supplier_chats_supplier ON supplier_chats(supplier_id);
+CREATE TABLE IF NOT EXISTS product_shots(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL,
+  file TEXT NOT NULL, thumb_file TEXT DEFAULT '',
+  ocr_text TEXT DEFAULT '', ocr_status TEXT DEFAULT '', ocr_error TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_product_shots_product ON product_shots(product_id);
 CREATE TABLE IF NOT EXISTS category_sku_prefixes(
   category_id INTEGER PRIMARY KEY,
   prefix TEXT NOT NULL,

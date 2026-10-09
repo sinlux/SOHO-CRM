@@ -10,6 +10,7 @@ from .util import ApiError
 # 设置页可读写的键；密钥类只返回"是否已设置+末4位"，不回传明文
 SECRET_KEYS = ('deepseek_key', 'tavily_key')
 PLAIN_KEYS = ('deepseek_model', 'hs_lookup_url')
+DEFAULT_HS_URL = 'https://www.hsbianma.com/Home/Message'      # 用户提供的 HS 编码查询网站（未设置时的默认值；拿不到它的搜索网址格式，所以只能打开首页）
 
 
 def _hint(v):
@@ -32,7 +33,7 @@ def register(r):
     def get_settings(ctx, req):
         out = {k: ctx.db.get_setting(k) for k in PLAIN_KEYS}
         out['deepseek_model'] = out['deepseek_model'] or 'deepseek-chat'
-        out['hs_lookup_url'] = out['hs_lookup_url'] or ''
+        out['hs_lookup_url'] = out['hs_lookup_url'] or DEFAULT_HS_URL
         for k in SECRET_KEYS:
             v = ctx.db.get_setting(k)
             out[k + '_set'] = bool(v)

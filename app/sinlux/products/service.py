@@ -37,7 +37,8 @@ def _txt(v):
 
 
 class ProductService:
-    def __init__(self, db, rates, history, catalog, media):
+    def __init__(self, db, rates, history, catalog, media, shots=None):
+        self.shots = shots
         self.db = db
         self.rates = rates
         self.history = history
@@ -66,8 +67,9 @@ class ProductService:
         if search:
             k = like(search)
             cols = ('p.sku', 'p.name', 'p.supplier', 'p.spec_text', 'p.remark', 'p.brand', 'p.series')
-            where.append('(' + ' OR '.join("%s LIKE ? ESCAPE '\\'" % c for c in cols) + ')')
-            params += [k] * len(cols)
+            where.append('(' + ' OR '.join("%s LIKE ? ESCAPE '\\'" % c for c in cols)
+                         + " OR EXISTS(SELECT 1 FROM product_shots s WHERE s.product_id=p.id AND s.ocr_text LIKE ? ESCAPE '\\'))")   # 备注截图里识别出的文字也能搜
+            params += [k] * (len(cols) + 1)
         if sort not in SORTS:
             raise ApiError('排序方式无效')
         w = ' AND '.join(where)
@@ -118,7 +120,8 @@ class ProductService:
                 'supplier_quotes': n('SELECT COUNT(*) FROM supplier_quotes WHERE product_id=?'),
                 'quote_items': n('SELECT COUNT(*) FROM quote_items WHERE product_id=?'),
                 'images': n('SELECT COUNT(*) FROM product_images WHERE product_id=?'),
-                'files': n('SELECT COUNT(*) FROM product_files WHERE product_id=?')}
+                'files': n('SELECT COUNT(*) FROM product_files WHERE product_id=?'),
+                'note_shots': n('SELECT COUNT(*) FROM product_shots WHERE product_id=?')}
 
     def usage(self, pid):
         """这个产品出现在哪些报价单里（只读，报价单本身在第三批）。"""
@@ -279,8 +282,11 @@ class ProductService:
             self.db.execute('UPDATE quote_items SET product_id=NULL WHERE product_id=?', (pid,))   # 历史报价明细是快照，保留
             imgs = self.media.delete_all_images(pid)
             docs = self.media.delete_all_files(pid)
+            note_shots = self.shots.delete_all(pid) if self.shots else []
             self.db.execute('DELETE FROM products WHERE id=?', (pid,))
         self.media.remove_files(imgs + shots)
+        if self.shots:
+            self.shots._rm(note_shots)
         self.media.remove_docs(docs)
 
     def duplicate(self, pid, new_sku):
@@ -337,7 +343,9 @@ class ProductService:
                 if not sv['spec_text'].strip() and mp['spec_text'].strip():
                     self.db.execute('UPDATE products SET spec_text=? WHERE id=?', (mp['spec_text'], survivor_id))
                     sv['spec_text'] = mp['spec_text']
-                self.media.move_images(mp['id'], survivor_id)       # 图片追加到保留产品相册末尾，保留产品的主图不变
+                self.media.move_images(mp['id'], survivor_id)
+                if self.shots:
+                    self.shots.move(mp['id'], survivor_id)       # 图片追加到保留产品相册末尾，保留产品的主图不变
                 self.db.execute('DELETE FROM product_field_values WHERE product_id=?', (mp['id'],))
                 self.db.execute('DELETE FROM products WHERE id=?', (mp['id'],))
                 merged_skus.append(mp['sku'])

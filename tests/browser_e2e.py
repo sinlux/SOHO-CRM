@@ -692,6 +692,29 @@ def main():
         check('PI 导入：成交单、产品、客户阶段', ctx.db.scalar("SELECT status FROM quotes WHERE quote_no='SL-E2E-US'") == 'accepted'
               and ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='CSL-10100'") == 1)
 
+        # ---------- 备注截图粘贴 / HS 查询按钮 ----------
+        print('备注截图 / HS')
+        ctx.shots.async_ocr = False
+        ctx.shots.ocr_fn = lambda path: ('done', '备注截图里的文字 含税价 42 元', '')
+        pid_s = ctx.db.scalar("SELECT id FROM products ORDER BY id LIMIT 1")
+        page.goto(base + '/#product/%d' % pid_s)
+        page.wait_for_selector('[data-tab=overview]')
+        page.click('[data-tab=overview]')                       # 产品页会记住上次停留的页签
+        page.wait_for_selector('#pRemark')
+        import base64 as _b64
+        from imgutil import PNG_RED_BOX as _PNG
+        page.evaluate("""b64 => { const bin = atob(b64); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+            const dt = new DataTransfer(); dt.items.add(new File([arr], 'a.png', {type: 'image/png'}));
+            document.querySelector('#pRemark').dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true})); }""", _b64.b64encode(_PNG).decode())
+        page.wait_for_selector('#shotBox img[data-shot]')
+        check('在内部备注里 Ctrl+V 粘贴截图：落盘并识别文字', ctx.db.scalar("SELECT COUNT(*) FROM product_shots WHERE product_id=? AND ocr_text LIKE '%含税价 42%'", (pid_s,)) == 1)
+        check('粘贴到备注的截图没有混进产品相册', ctx.db.scalar('SELECT COUNT(*) FROM product_images WHERE product_id=?', (pid_s,)) == page.evaluate("document.querySelectorAll('#gThumbs img').length"))
+        page.evaluate("window.open = (u) => { window.__opened = u; }")
+        page.click('#btnHs')
+        page.wait_for_function("window.__opened")
+        check('HS 查询按钮打开默认的海关查询网站', page.evaluate('window.__opened') == 'https://www.hsbianma.com/Home/Message', page.evaluate('window.__opened'))
+        ctx.shots.async_ocr = True
+
         # ---------- 规格字段按子类显示 / 客户下拉缩写 / 供应商档案 ----------
         print('规格联动 / 客户下拉 / 供应商')
         rug = ctx.db.scalar("SELECT id FROM categories WHERE name='E2E 地毯'")
@@ -710,9 +733,7 @@ def main():
         page.check('#showAllFields')
         check('勾选「显示全部字段」后全部显示', page.locator('#fv_%d' % needle_id).is_visible())
         page.click('[data-tab=overview]')
-        page.click('#btnHs')
-        page.wait_for_function("document.querySelector('#toast').textContent.includes('HS 编码查询网址')")
-        check('没配置 HS 查询网址时有明确提示', True)
+        check('新建产品页有 HS 查询按钮', page.locator('#btnHs').count() == 1)
 
         page.goto(base + '/#quotenew')
         page.wait_for_selector('#qCust')

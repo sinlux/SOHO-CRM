@@ -13,6 +13,7 @@ from .products import catalog as catalog_mod
 from .products.catalog import CatalogService
 from .products.pricing import PriceHistory
 from .products.media import MediaStore
+from .products.shots import ProductShots
 from .products.rates import RateService, RateScheduler
 from .products.service import ProductService, SupplierService
 from .imports import routes as import_routes
@@ -62,7 +63,8 @@ class Context:
         self.history = PriceHistory(self.db, self.rates)
         self.media = MediaStore(self.db, self.uploads_dir, self.files_dir)
         self.media.cleanup_staged()
-        self.products = ProductService(self.db, self.rates, self.history, self.catalog, self.media)
+        self.shots = ProductShots(self.db, os.path.join(self.data_dir, 'product_shots'), async_ocr=async_ocr)
+        self.products = ProductService(self.db, self.rates, self.history, self.catalog, self.media, self.shots)
         self.vendors = SupplierBook(self.db, os.path.join(self.data_dir, 'supplier_files'), async_ocr=async_ocr)
         self.suppliers = SupplierService(self.db, self.uploads_dir, self.products, self.history, self.vendors)
         self.customers = CustomerService(self.db, self.images_dir)

@@ -77,8 +77,10 @@ def parse_pi(path, original_name=''):
                     cols['qty'] = c
                 elif hl.startswith('amount'):
                     cols['amount'] = c
-                elif hl == 'rmb' and 'rmb' not in cols:
-                    cols['rmb'] = c
+                elif ('rmb' not in cols) and (hl in ('rmb', 'cny', '¥', '人民币', '采购总价', '采购金额', '成本合计', '采购成本') or hl.startswith('rmb')):
+                    cols['rmb'] = c                                  # 这一行的采购总价（人民币），单件成本 = 它 ÷ 数量
+                elif 'unit_cost' not in cols and hl in ('采购单价', '采购价', '成本单价', '成本价', 'unit cost', 'cost/pcs', 'cost price'):
+                    cols['unit_cost'] = c                            # 直接就是单件采购价（人民币）
             break
     if header_row is None or 'name' not in cols:
         raise ApiError('无法识别「%s」的明细表头，请确认是标准 PI 模板（需要「Item No.」「Product Name」列）' % original_name)
@@ -108,6 +110,9 @@ def parse_pi(path, original_name=''):
         cm = re.search(r'Code[:：]\s*([A-Za-z0-9][A-Za-z0-9\-_./]*)', spec)
         sku = cm.group(1) if cm else base                            # Code 优先，没有再用品名
         cost = round(float(rmb) / float(qty), 3) if is_product and _is_num(rmb) and rmb > 0 else None
+        if cost is None and is_product and 'unit_cost' in cols:
+            uc = _cell(ws, r, cols['unit_cost'])
+            cost = round(float(uc), 3) if _is_num(uc) and uc > 0 else None
         items.append({'row': r + 1, 'is_product': is_product, 'sku': sku, 'name': base, 'spec': spec,
                       'unit_price': float(price) if _is_num(price) else None, 'quantity': float(qty) if _is_num(qty) else None,
                       'amount': round(float(amount), 2) if _is_num(amount) else None, 'unit_cost_cny': cost, 'include': True})
@@ -141,6 +146,17 @@ class PiImporter:
             it['exists'] = bool(it['is_product'] and it['sku'] and self.db.one('SELECT 1 FROM products WHERE sku=? COLLATE NOCASE', (it['sku'],)))
         calc = round(sum((i['amount'] or 0) for i in d['items']), 2)
         d['sum_matches_total'] = d['total_amount'] is None or abs(calc - d['total_amount']) < 0.01
+        # 毛利估算：售价（USD）减采购价（CNY 按当前汇率折美元）。只是帮你在导入前核对，不写进任何记录。
+        rate = self.products.rates.rate()
+        d['rate'] = rate
+        rev = cost = 0.0
+        for it in d['items']:
+            if it['is_product'] and it['unit_cost_cny'] and it['unit_price'] and d['currency'] == 'USD':
+                it['margin_pct'] = round((it['unit_price'] - it['unit_cost_cny'] * rate) / it['unit_price'] * 100, 1)
+                rev += it['unit_price'] * it['quantity']
+                cost += it['unit_cost_cny'] * rate * it['quantity']
+        d['profit'] = {'revenue_usd': round(rev, 2), 'cost_usd': round(cost, 2), 'profit_usd': round(rev - cost, 2),
+                       'margin_pct': round((rev - cost) / rev * 100, 1) if rev else None}
         return d
 
     def _match(self, buyer):

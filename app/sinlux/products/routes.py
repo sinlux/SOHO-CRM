@@ -300,6 +300,33 @@ def register(r):
         ctx.media.delete_file(_id(req))
         return {'ok': True}
 
+    # ---------- 内部备注截图（Ctrl+V 粘贴，本机 OCR 建搜索索引） ----------
+    @r.get('/api/products/{id}/shots')
+    def list_shots(ctx, req):
+        pid = _id(req)
+        ctx.products.require(pid)
+        return {'shots': ctx.shots.list(pid)}
+
+    @r.post('/api/products/{id}/shots')
+    def add_shot(ctx, req):
+        pid = _id(req)
+        ctx.shots.add(pid, req.json().get('image_base64'))
+        return {'ok': True, 'shots': ctx.shots.list(pid)}
+
+    @r.put('/api/product_shots/{id}')
+    def set_shot_text(ctx, req):
+        ctx.shots.set_text(_id(req), req.json().get('ocr_text'))
+        return {'ok': True}
+
+    @r.delete('/api/product_shots/{id}')
+    def del_shot(ctx, req):
+        ctx.shots.delete(_id(req))
+        return {'ok': True}
+
+    @r.get('/product_shots/{name}')
+    def shot_file(ctx, req):
+        return FileResponse(ctx.shots.file_path(req.params['name']))
+
     @r.get('/files/{name}')
     def download_file(ctx, req):
         name = os.path.basename(req.params['name'])

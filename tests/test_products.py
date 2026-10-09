@@ -256,7 +256,7 @@ class TestDeleteProduct(AppTestCase):
         self.ctx.db.execute("INSERT INTO quote_items(quote_id,product_id,sku,name,quantity,unit_price) VALUES(?,?,?,?,1,10)", (qid, pid, 'X', 'Snapshot'))
         st, r = self.c.delete('/api/products/%d' % pid, {})
         self.assertEqual((st, r['needs_confirm'], r['impact']), (409, True, {'price_records': 1, 'supplier_quotes': 1, 'quote_items': 1,
-                                                                            'images': 1, 'files': 0}))
+                                                                            'images': 1, 'files': 0, 'note_shots': 0}))
         self.assertTrue(os.path.exists(os.path.join(self.ctx.uploads_dir, img)))
         self.assertEqual(self.c.delete('/api/products/%d' % pid, {'confirm': True})[0], 200)
         db = self.ctx.db

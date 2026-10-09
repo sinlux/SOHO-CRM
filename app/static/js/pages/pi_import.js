@@ -1,6 +1,16 @@
 import {$, $$, esc, api, upload, toast, nav} from '../lib.js';
 
 // PI 导入：可一次选多个 .xls。每张 PI 先预览（产品、成本、客户匹配），确认后才写入。
+const marginText = (it, d) => {
+  if (!it.unit_cost_cny || !it.unit_price || d.currency !== 'USD') return '<span class="muted">—</span>';
+  const m = (it.unit_price - it.unit_cost_cny * d.rate) / it.unit_price * 100;
+  return `<b class="${m < 10 ? 'err' : ''}">${m.toFixed(1)}%</b>`;
+};
+const profitText = d => {
+  let rev = 0, cost = 0;
+  d.items.forEach(it => { if (it.include !== false && it.is_product && it.unit_cost_cny && it.unit_price && d.currency === 'USD') { rev += it.unit_price * it.quantity; cost += it.unit_cost_cny * d.rate * it.quantity; } });
+  return rev ? `毛利估算（按当前汇率 1 CNY = ${d.rate} USD，不含运费等）：售价合计 $${rev.toFixed(2)}，采购合计 $${cost.toFixed(2)}，毛利 <b>$${(rev - cost).toFixed(2)}（${((rev - cost) / rev * 100).toFixed(1)}%）</b>。` : '';
+};
 export async function render(root, _arg, isCurrent) {
   const cats = (await api('/api/categories')).categories;
   if (!isCurrent()) return;
@@ -27,12 +37,14 @@ export async function render(root, _arg, isCurrent) {
         <div class="flex"><label>客户 <input data-cust="${i}" list="dlCust" placeholder="输入公司名/邮箱搜索，选一个" style="min-width:280px" value="${d.customer_id ? esc(p.custLabel || '') : (d.matched_customer ? esc(d.matched_customer.company || d.matched_customer.name) : '')}"></label>
           ${d.customer_candidates.length ? `<span class="muted">候选：${d.customer_candidates.map(c => `<a href="#" data-pick="${i}:${c.id}">${esc(c.company)}</a>`).join(' / ')}</span>` : ''}
           <label>新产品类目 <select data-cat="${i}">${cats.map(c => `<option value="${c.id}" ${c.id === (d.category_id || lighting) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label></div>
-        <div class="scroll" style="margin-top:10px;max-height:340px"><table><tr><th></th><th>SKU</th><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>金额</th><th>成本¥/件</th></tr>
+        <div class="scroll" style="margin-top:10px;max-height:340px"><table><tr><th></th><th>SKU</th><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>金额</th><th>采购价 ¥/件</th><th>毛利率</th></tr>
           ${d.items.map((it, j) => `<tr><td><input type="checkbox" data-inc="${i}:${j}" ${it.include === false ? '' : 'checked'}></td>
             <td>${it.is_product ? `<b>${esc(it.sku)}</b> ${it.exists ? '<span class="tag warn">已有</span>' : '<span class="tag good">新建</span>'}` : '<span class="tag">非产品行</span>'}</td><td>${esc(it.name)}</td>
             <td style="max-width:240px"><div data-spec style="cursor:pointer;white-space:pre-wrap;max-height:3.6em;overflow:hidden" title="点击展开">${esc(it.spec)}</div></td>
             <td>${it.quantity ?? ''}</td><td>${it.unit_price ?? ''}</td><td>${it.amount ?? ''}</td>
-            <td>${it.is_product ? `<input data-cost="${i}:${j}" type="number" step="any" min="0" value="${it.unit_cost_cny ?? ''}" style="width:90px">` : ''}</td></tr>`).join('')}</table></div>
+            <td>${it.is_product ? `<input data-cost="${i}:${j}" type="number" step="any" min="0" value="${it.unit_cost_cny ?? ''}" style="width:90px">` : ''}</td>
+            <td data-margin="${i}:${j}">${it.is_product ? marginText(it, d) : ''}</td></tr>`).join('')}</table></div>
+        <p class="muted" style="margin-top:6px">每行：<b>售价（USD）</b>会存为这个客户的售价记录，<b>采购价（人民币）</b>会存为产品的成本记录（只有你看得到，不会出现在给客户的报价单上）。<span data-profit="${i}">${profitText(d)}</span></p>
         <div class="flex" style="margin-top:10px"><button class="primary" data-apply="${i}" ${d.already_imported ? 'disabled' : ''}>确认导入这张 PI</button></div>`}
       </div>`;
     }).join('') || '';
@@ -61,7 +73,12 @@ export async function render(root, _arg, isCurrent) {
       return;
     }
     const cost = e.target.closest('[data-cost]');
-    if (cost) { const [i, j] = cost.dataset.cost.split(':').map(Number); pis[i].data.items[j].unit_cost_cny = cost.value === '' ? null : parseFloat(cost.value); }
+    if (cost) {
+      const [i, j] = cost.dataset.cost.split(':').map(Number), d = pis[i].data;
+      d.items[j].unit_cost_cny = cost.value === '' ? null : parseFloat(cost.value);
+      const m = $(`[data-margin="${i}:${j}"]`); if (m) m.innerHTML = marginText(d.items[j], d);       // 改采购价，毛利率和合计马上跟着变
+      const pt = $(`[data-profit="${i}"]`); if (pt) pt.innerHTML = profitText(d);
+    }
   };
   out.onchange = e => {
     const inc = e.target.closest('[data-inc]');

@@ -124,3 +124,10 @@ tests/                   unittest（249项）+ browser_e2e.py（Playwright 无�
 - OCR：`suppliers/ocr.py` + `ocr_win.ps1` 用 Windows 自带 `Windows.Media.Ocr`（本机识别，不上传）；非 Windows 返回 unavailable。**未在真实 Windows 上验证**（云端只能测切条/清洗逻辑和状态流转）。需要系统装有中文语言包才能识别中文。识别结果会去掉汉字间的空格；超长截图按 5000px 切条。后台线程识别，期间用户手改过文字则不覆盖（`ocr_status='pending'` 才写回）。
 - HS 编码：没有拿到用户说的海关网站，所以做成「设置里填查询网址（可用 {keyword}）+ 本库已用编码下拉复用」，没有内置任何编码数据（不编造）。
 - 前端防抖：搜索框的 250ms 定时器触发时用户可能已切页，`load` 开头要判断元素还在。
+
+## 5.0.0-rc.3
+- 备注截图 `products/shots.py`（表 `product_shots`，目录 `data/product_shots`）：OCR 逻辑与供应商聊天一致（后台线程；手改过文字则不覆盖）；产品搜索 EXISTS 子查询搜 `ocr_text`；删除/合并产品时清文件/迁移。
+- PI：预览返回 `rate` / `margin_pct` / `profit`（只估算，不写库）；采购价列兼容 `rmb/采购总价…`（总价÷数量）与 `采购单价…`（直接单价）。**真实 PI 的列名是否都能识别还没验证**——识别不了会报「无法识别明细表头」并指出缺哪列。
+- HS：拿不到 hsbianma.com 的搜索网址格式（云端访问被拦），所以默认只打开网站并把产品名复制到剪贴板；如果用户确认它支持关键词网址，把 `{keyword}` 写进设置里的网址即可。
+- 「升级不动数据/设置」有专门测试：`tests/test_remark_data_safety.py::TestUpgradeKeepsUserData`（走真实升级接口 → data 目录逐文件哈希不变；重跑迁移+种子后 settings/app_settings 全等；想改 data 的包被拒绝）。
+- 踩坑：产品页会记住上次停留的页签（`activeTab`，同一个产品 id 重新进入时不重置），e2e 要先点「概览」页签再找 `#pRemark`。
