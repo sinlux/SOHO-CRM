@@ -9,6 +9,7 @@ from .core.http import Router, make_server
 from .customers.service import CustomerService
 from .customers.xlsx_io import CustomerImporter
 from .customers.enrich import Enricher
+from .customers.batch import BatchRunner
 from .products import catalog as catalog_mod
 from .products.catalog import CatalogService
 from .products.pricing import PriceHistory
@@ -79,6 +80,7 @@ class Context:
         self.doc_import = DocImporter(self.db, self.products, self.quotes, self.customers, self.vendors, self.suppliers, self.history, self.catalog,
                                       self.media, os.path.join(self.import_tmp, 'doc'), self.uploads_dir)
         self.enricher = Enricher(self.db, self.customers, net)
+        self.enrich_batch = BatchRunner(self.db, self.enricher)
         self.dashboard = Dashboard(self.db, self.rates)
         self.version = read_version()
         self.updater = Updater(os.path.dirname(APP_DIR), self.data_dir, self.version)
@@ -88,6 +90,7 @@ class Context:
             self.scheduler.start()
 
     def close(self):
+        self.enrich_batch.pause('程序关闭')
         if self.scheduler:
             self.scheduler.stop()
         self.db.close()

@@ -68,7 +68,7 @@ export async function render(root, arg, isCurrent) {
 
   <div class="card"><h3 style="margin-top:0">背调历史</h3>
     ${d.enrichments.length ? d.enrichments.map(e => `<div class="flex" style="padding:4px 0">
-      <span class="muted">${esc(e.created_at)}</span><span class="tag">${EN_STATUS[e.status] || esc(e.status)}</span>
+      <span class="muted">${esc(e.created_at)}</span><span class="tag">第${e.round || 1}轮</span><span class="tag">${EN_STATUS[e.status] || esc(e.status)}</span>${e.status !== 'failed' ? `<span class="muted">完整度 ${e.score || 0}</span>` : ''}
       ${e.status === 'pending' ? `<button data-review="${e.id}">查看并确认</button>` : ''}
       ${e.status === 'failed' ? `<span class="muted err">${esc(e.error)}</span>` : ''}
       ${e.status === 'applied' ? `<button data-review="${e.id}" data-ro="1">查看原始材料</button>` : ''}

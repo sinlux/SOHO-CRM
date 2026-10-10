@@ -25,14 +25,22 @@ class FakeNet:
         self.search_results = []
         self.llm_reply = '{}'
         self.calls = []
+        self.domains = []
         self.fail_search = False
+        self.quota_after = None      # 第 N 次搜索起抛 QuotaError
+        self.n_search = 0
 
     def fetch_page(self, url, timeout=12):
         self.calls.append(('fetch', url))
         return self.pages.get(url)
 
-    def tavily_search(self, key, query, max_results=5):
+    def tavily_search(self, key, query, max_results=5, include_domains=None):
         self.calls.append(('search', query))
+        self.domains.append(include_domains)
+        self.n_search += 1
+        if self.quota_after is not None and self.n_search > self.quota_after:
+            from sinlux.customers.enrich import QuotaError
+            raise QuotaError('Tavily 额度用完')
         if self.fail_search:
             raise RuntimeError('boom')
         return list(self.search_results)

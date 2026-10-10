@@ -200,6 +200,42 @@ def main():
               'new@fake4.com' in page.input_value('[data-f=emails]') and '一家假公司' in page.inner_text('body')
               and page.input_value('[data-f=linkedin]') == '' and page.input_value('[data-f=company_size]') == '50人')
 
+        # ---------- 多轮背调 + 批量背调 ----------
+        print('多轮 / 批量背调')
+        net.llm_reply = json.dumps({
+            'emails': [{'value': 'x1@fake4.com', 'source': 'https://www.fake4.com/'}, {'value': 'wrong@fake4.com', 'source': 'https://www.fake4.com/'}],
+            'whatsapp': [], 'phones': [], 'linkedin': [], 'facebook': [], 'instagram': [], 'other_social': [], 'key_people': [],
+            'import_signals': [{'value': '2024年进口LED灯', 'source': 'https://li.example/fc4'}],
+            'risk_flags': [{'value': '有投诉记录', 'source': 'https://li.example/fc4'}],
+            'company_size': None, 'founded_year': None, 'customer_type': None, 'main_products': None, 'certifications': None,
+            'relevance': {'value': '高', 'reason': '做酒店灯具', 'source': 'https://li.example/fc4'}, 'summary': ''})
+        page.click('#btnEnrich')
+        page.wait_for_selector('#btnNext')
+        txt = page.inner_text('#modalBody')
+        check('背调弹窗：显示第1轮、风险提示、进口线索、相关度、查了哪些渠道',
+              '第 1 轮' in txt and '风险提示' in txt and '有投诉记录' in txt and '进口 / 采购线索' in txt and '做酒店灯具' in txt and '这一轮查了哪些渠道' in txt, txt[:300])
+        page.uncheck('input[value="wrong@fake4.com"]')
+        net.llm_reply = json.dumps({
+            'emails': [{'value': 'WRONG@fake4.com', 'source': 'https://www.fake4.com/'}, {'value': 'sales@fake4.com', 'source': 'https://www.fake4.com/'}],
+            'whatsapp': [], 'phones': [], 'linkedin': [], 'facebook': [], 'instagram': [], 'other_social': [], 'key_people': [],
+            'import_signals': [], 'risk_flags': [], 'company_size': None, 'founded_year': None, 'customer_type': None, 'main_products': None,
+            'certifications': None, 'relevance': None, 'summary': ''})
+        page.click('#btnNext')
+        page.wait_for_function("document.querySelector('#modalBody').innerText.includes('背调结果 · 第 2 轮')", timeout=15000)
+        txt = page.inner_text('#modalBody')
+        check('继续下一轮：已否掉的邮箱不再出现，新发现的出现；第1轮勾选项已写入',
+              'sales@fake4.com' in txt and 'wrong@fake4.com' not in txt.lower().replace('已自动排除', '') or ('sales@fake4.com' in txt and page.locator('input[value="WRONG@fake4.com"]').count() == 0), txt[:300])
+        page.click('#btnClose')
+        page.wait_for_function("document.querySelector('#modal').style.display === 'none'")
+
+        page.click('a[data-v=enrichbatch]')
+        page.wait_for_selector('#bEst')
+        page.click('#bEst')
+        page.wait_for_selector('#bEstOut')
+        check('批量背调页：估算框出现（客户数/搜索次数 或 无可选客户）', len(page.inner_text('#bEstOut').strip()) > 0)
+        page.go_back()                                           # 回到刚才的客户详情页
+        page.wait_for_selector('#btnDel')
+
         # ---------- 删除客户 ----------
         print('删除客户')
         dialogs.clear()

@@ -19,7 +19,12 @@ PRODUCT_NEW_COLUMNS = [
 LATER_COLUMNS = [
     ('category_fields', 'applies_to', "TEXT DEFAULT ''"),           # 该字段适用的子类（| 分隔）；空 = 所有子类都显示
     ('supplier_quotes', 'supplier_id', 'INTEGER REFERENCES suppliers(id) ON DELETE SET NULL'),
-    ('supplier_quotes', 'project', "TEXT DEFAULT ''"),               # 询价项目（自由文字）：一个项目问几十家，最后选一家
+    ('supplier_quotes', 'project', "TEXT DEFAULT ''"),
+    ('enrichments', 'round', 'INTEGER DEFAULT 1'),                    # 第几轮背调（第 2 轮起会排除用户已否掉的信息、只补缺口）
+    ('enrichments', 'parent_id', 'INTEGER'),
+    ('enrichments', 'depth', "TEXT DEFAULT ''"),
+    ('enrichments', 'score', 'INTEGER DEFAULT 0'),                    # 资料完整度（找到几项关键信息）
+    ('enrichments', 'plan', "TEXT DEFAULT ''"),                       # 这次用了哪些搜索（JSON）
 ]
 
 STAGES = ['潜在', '已联系', '已报价', '已寄样', '成交', '复购', '沉睡']
@@ -212,6 +217,24 @@ CREATE TABLE IF NOT EXISTS product_shots(
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_product_shots_product ON product_shots(product_id);
+CREATE TABLE IF NOT EXISTS enrich_queue(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL,
+  state TEXT DEFAULT 'queued',            -- queued / running / done / failed / cancelled
+  depth TEXT DEFAULT 'standard',
+  round INTEGER DEFAULT 1,
+  enrichment_id INTEGER,
+  error TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now','localtime')), started_at TEXT, finished_at TEXT,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_enrich_queue_state ON enrich_queue(state);
+CREATE TABLE IF NOT EXISTS enrich_rejects(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL,
+  field TEXT NOT NULL, value TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE (customer_id, field, value),
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS category_sku_prefixes(
   category_id INTEGER PRIMARY KEY,
   prefix TEXT NOT NULL,

@@ -102,7 +102,7 @@ class CustomerService:
             'customer': c,
             'notes': self.db.query('SELECT * FROM notes WHERE customer_id=? ORDER BY id DESC', (cid,)),
             'reminders': self.db.query('SELECT * FROM reminders WHERE customer_id=? ORDER BY done, due_date', (cid,)),
-            'enrichments': self.db.query('SELECT id,status,error,created_at FROM enrichments '
+            'enrichments': self.db.query('SELECT id,status,error,created_at,round,score FROM enrichments '
                                          'WHERE customer_id=? ORDER BY id DESC', (cid,)),
             'quotes': quotes,
         }

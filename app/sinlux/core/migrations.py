@@ -33,7 +33,7 @@ def migrate(db):
             did('products 补列 %s' % col)
 
     for table, col, ddl in schema.LATER_COLUMNS:
-        if not db.column_exists(table, col):
+        if db.table_exists(table) and not db.column_exists(table, col):
             db.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table, col, ddl))
             did('%s 补列 %s' % (table, col))
 
@@ -44,6 +44,11 @@ def migrate(db):
 
     # 3. 客户子表：新库直接建；旧库（无外键）保全孤儿后重建
     _ensure_child_tables(db, report, did)
+
+    for table, col, ddl in schema.LATER_COLUMNS:                 # 子表（enrichments 等）此时才确定存在，再补一遍
+        if db.table_exists(table) and not db.column_exists(table, col):
+            db.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table, col, ddl))
+            did('%s 补列 %s' % (table, col))
 
     # 4. 阶段值统一成中文（旧版混写过 won/repeat/quoted 等英文 key）
     n = 0

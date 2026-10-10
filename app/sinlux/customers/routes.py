@@ -12,6 +12,15 @@ def _id(req, name='id'):
     return int(req.params[name])
 
 
+def _quota(fn):
+    """额度 / Key 问题转成清楚的 429，而不是 500。"""
+    from .enrich import QuotaError
+    try:
+        return fn()
+    except QuotaError as e:
+        raise ApiError(str(e) + '。请到 tavily.com 检查额度或在设置里更换 Key', 429)
+
+
 def register(r):
     # ---------- 客户 ----------
     @r.get('/api/customers')
@@ -160,7 +169,62 @@ def register(r):
     # ---------- AI 背调 ----------
     @r.post('/api/customers/{id}/enrich')
     def enrich(ctx, req):
-        return {'ok': True, **ctx.enricher.run(_id(req))}
+        b = req.json()
+        return {'ok': True, **_quota(lambda: ctx.enricher.run(_id(req), b.get('depth') or 'standard'))}
+
+    @r.get('/api/customers/{id}/enrichments')
+    def list_enrichments(ctx, req):
+        return {'items': ctx.enricher.list_for_customer(_id(req))}
+
+    @r.post('/api/enrichments/{id}/continue')
+    def continue_enrichment(ctx, req):
+        b = req.json()
+        return {'ok': True, **_quota(lambda: ctx.enricher.continue_round(
+            _id(req), b.get('select') or {}, b.get('rejected') or {}, b.get('depth') or 'standard'))}
+
+    @r.post('/api/enrichments/{id}/reject')
+    def reject_enrichment(ctx, req):
+        b = req.json()
+        n = ctx.enricher.reject(_id(req), b.get('rejected') or {})
+        if b.get('close'):
+            ctx.db.execute("UPDATE enrichments SET status='applied' WHERE id=? AND status='pending'", (_id(req),))
+        return {'ok': True, 'rejected': n}
+
+    # ---------- 批量背调 ----------
+    @r.post('/api/enrich/batch/estimate')
+    def batch_estimate(ctx, req):
+        b = req.json()
+        return ctx.enrich_batch.estimate(b.get('scope') or {}, b.get('depth') or 'standard')
+
+    @r.post('/api/enrich/batch')
+    def batch_enqueue(ctx, req):
+        b = req.json()
+        out = ctx.enrich_batch.enqueue(b.get('scope') or {}, b.get('depth') or 'standard', b.get('limit') or 500)
+        if b.get('start', True):
+            ctx.enrich_batch.start()
+        return {'ok': True, **out}
+
+    @r.get('/api/enrich/batch')
+    def batch_status(ctx, req):
+        return ctx.enrich_batch.status(int(req.arg('limit') or 500), req.arg('state'))
+
+    @r.post('/api/enrich/batch/start')
+    def batch_start(ctx, req):
+        ctx.enrich_batch.start()
+        return {'ok': True}
+
+    @r.post('/api/enrich/batch/pause')
+    def batch_pause(ctx, req):
+        ctx.enrich_batch.pause()
+        return {'ok': True}
+
+    @r.post('/api/enrich/batch/clear')
+    def batch_clear(ctx, req):
+        return {'ok': True, 'cancelled': ctx.enrich_batch.cancel_queued()}
+
+    @r.post('/api/enrich/batch/retry')
+    def batch_retry(ctx, req):
+        return {'ok': True, 'requeued': ctx.enrich_batch.retry_failed()}
 
     @r.get('/api/enrichments/{id}')
     def get_enrichment(ctx, req):

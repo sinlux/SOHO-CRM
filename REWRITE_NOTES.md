@@ -139,3 +139,12 @@ tests/                   unittest（249项）+ browser_e2e.py（Playwright 无�
 - 供应商报价单只接受 CNY（`supplier_quotes.price_cny` 是人民币列），USD 报价会明确拒绝并说明，不静默丢。
 - xls 里的图片取不出（BIFF 格式），界面提示另存为 xlsx。PDF / 图片版报价单暂不支持。
 - 未验证：用户真实的 PI/报价单版式（只用造的几种版式测过，识别不准时有手动指定列兜底）。
+
+## 5.0.0-rc.5（批量背调）
+- `customers/enrich.py`：`plan_queries` 按深度生成多渠道查询（Tavily `include_domains` 定向到 LinkedIn / 社媒 / 黄页 / 进口记录 / B2B 平台；西语国家加当地语言查询）；`Net.tavily_search` 把 429/432/433/401/403 转成 `QuotaError`（批量遇到就整批暂停，单个背调返回 429 和清楚的说明）。
+- 提示词 v2 新增 `import_signals / risk_flags / relevance`，全部走 `sanitize`：来源必须是实际抓取的 URL；relevance 只接受 高/中/低 且有来源，否则当"未知"。
+- 多轮：`enrichments` 加 `round/parent_id/depth/score/plan`；表 `enrich_rejects(customer_id, field, value)` 记住用户否掉的值。`continue_round` = 先 `reject`（只接受确实出现在该次提取结果里的值）→ 写入勾选项 → 按"本轮仍缺且档案里也没有"的字段排序下一轮的查询维度。第 2 轮查询去掉引号换问法。代码层 `_filter_rejected` 再挡一次（模型不听话也进不来）。
+- `customers/batch.py`：队列存 `enrich_queue`；3 个 worker 线程原子领取；`QuotaError` → 放回队列并暂停；启动时 running 回 queued 且默认暂停（不能一开程序就花钱）。`run_pending_sync` 给测试用。
+- `schema.LATER_COLUMNS` 的补列现在跑两遍（子表 `enrichments` 在 `_ensure_child_tables` 里才建，第一遍表不存在会炸）。
+- 未验证：真实 Tavily 的 `include_domains` 对各网站的命中率（不同域名搜不到会是空结果，不会报错）；真实 DeepSeek 对新字段的遵守程度（所以全靠代码层校验来源）；批量 3 并发是否触发 Tavily/DeepSeek 限流（触发 429 会暂停整批）。
+- 数据安全：发给搜索 / AI 的只有公司名 + 国家 + 已有官网域名抓到的公开网页内容；不发报价、订单、联系人私人信息。
