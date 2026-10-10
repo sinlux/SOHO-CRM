@@ -27,7 +27,8 @@ def register(r):
                 log = f.read()
         except OSError:
             pass
-        return {'version': ctx.version, 'changelog': log}
+        return {'version': ctx.version, 'changelog': log, 'data_dir': os.path.abspath(ctx.data_dir),
+                'customers': ctx.db.scalar('SELECT COUNT(*) FROM customers'), 'products': ctx.db.scalar('SELECT COUNT(*) FROM products')}
 
     @r.get('/api/settings')
     def get_settings(ctx, req):

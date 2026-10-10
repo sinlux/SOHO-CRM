@@ -1,4 +1,4 @@
-import {$, $$, esc, updateBadge} from './lib.js';
+import {$, $$, esc, api, updateBadge} from './lib.js';
 import * as dashboard from './pages/dashboard.js';
 import * as list from './pages/list.js';
 import * as add from './pages/add.js';
@@ -54,3 +54,11 @@ $('#gSearch').addEventListener('keydown', e => {
 });
 window.addEventListener('hashchange', route);
 route();
+
+// 侧边栏底部显示当前版本；鼠标放上去显示数据所在文件夹（升级后发现数据"不见了"，通常是启动了别的文件夹里的程序，看这里就能确认）
+api('/api/version').then(v => {
+  const b = $('#verBox');
+  if (!b) return;
+  b.innerHTML = 'v' + v.version + '<br>客户 ' + v.customers + ' · 产品 ' + v.products;
+  b.title = `当前版本 ${v.version}\n数据文件夹：${v.data_dir}\n客户 ${v.customers} 个 · 产品 ${v.products} 个`;
+}).catch(() => {});

@@ -222,3 +222,5 @@ td.chk,th.chk{width:36px;padding-right:0}
 .chosen{display:inline-flex;align-items:center;gap:8px;background:var(--leaf-soft);padding:5px 12px;border-radius:999px}
 code{background:var(--card-2);border:1px solid var(--line-2);border-radius:6px;padding:0 5px;font-size:12px}
 @media (max-width:1000px){.qrow{grid-template-columns:60px 1fr 1fr}.qrow .qmain{grid-column:2/4}}
+
+.verbox{position:absolute;left:0;right:0;bottom:12px;z-index:1;text-align:center;font-size:12px;color:var(--muted,#8a8a7a);cursor:default}
