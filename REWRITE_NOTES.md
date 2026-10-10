@@ -131,3 +131,11 @@ tests/                   unittest（249项）+ browser_e2e.py（Playwright 无�
 - HS：拿不到 hsbianma.com 的搜索网址格式（云端访问被拦），所以默认只打开网站并把产品名复制到剪贴板；如果用户确认它支持关键词网址，把 `{keyword}` 写进设置里的网址即可。
 - 「升级不动数据/设置」有专门测试：`tests/test_remark_data_safety.py::TestUpgradeKeepsUserData`（走真实升级接口 → data 目录逐文件哈希不变；重跑迁移+种子后 settings/app_settings 全等；想改 data 的包被拒绝）。
 - 踩坑：产品页会记住上次停留的页签（`activeTab`，同一个产品 id 重新进入时不重置），e2e 要先点「概览」页签再找 `#pRemark`。
+
+## 5.0.0-rc.4（导入大改）
+- **Failed to fetch 的根因**：上传路由在 `new_path()` 里发现扩展名不对就抛 ApiError，但请求体还没读，服务器直接回复并关连接，浏览器还在发送 → 只报 "Failed to fetch"。修复在 `core/http.py`：Request 跟踪未读字节 `_body_left`，错误回复前 `_drain()` 把剩余请求体读掉（上限 300MB，超过就关连接）。测试：`TestDocImportPI.test_wrong_extension_gives_clear_error_even_for_big_upload`（25MB 错误扩展名上传必须拿到 400 JSON）。
+- `imports/grid.py`（xls/xlsx 统一成格子）、`docparse.py`（找表头 / 认列 / 表头上方抽 PI 号、日期、买家 / 判断类型）、`dedupe.py`（名称相似 + 图片感知哈希+颜色签名 + SKU 近似；全库查重用鸽巢分块）、`docimport.py`（识别 → 清洗 → 校验 → 写入）。
+- 踩坑：① 「单价(RMB)」里的 RMB 只是币种，不能因此认成采购总价（_WEAK 词只在整格相等时才算）；② 中文表头词只有 2 个字（单价/数量），包含匹配要放行 CJK；③ 「Item No.」里全是 1、2、3 的是序号不是型号；④ 「采购价」列可能是单件也可能是整行合计——比较它和售价×7 的中位数，>1.6 就按合计折算并给出提示；⑤ 只比灰度哈希会把「同形状不同颜色」当成同一产品，必须加 4x4 颜色签名；⑥ 规范化后的库图和 PI 里的原图构图不同，查重前要把 PI 里的图走同样的 `imaging.process` 再比；⑦ 结果里 `skipped` 同时表示「PI 号重复」和「跳过的产品数」导致界面显示 undefined——计数改名 `products_skipped`。
+- 供应商报价单只接受 CNY（`supplier_quotes.price_cny` 是人民币列），USD 报价会明确拒绝并说明，不静默丢。
+- xls 里的图片取不出（BIFF 格式），界面提示另存为 xlsx。PDF / 图片版报价单暂不支持。
+- 未验证：用户真实的 PI/报价单版式（只用造的几种版式测过，识别不准时有手动指定列兜底）。

@@ -683,14 +683,47 @@ def main():
         page.wait_for_selector('#files')
         page.set_input_files('#files', pip)
         page.click('#btnUp')
-        page.wait_for_selector('[data-pi]')
-        check('PI 预览：解析出 PI 号和 3 行明细', 'SL-E2E-US' in page.inner_text('[data-pi]') and page.locator('[data-pi] tbody tr, [data-pi] table tr').count() >= 4)
-        check('PI 预览：匹配到已有客户（公司名）', '已匹配' in page.inner_text('[data-pi]'))
+        page.wait_for_selector('[data-doc]')
+        check('PI 预览：识别出 PI 号、3 行明细、类型为客户 PI', 'SL-E2E-US' in page.input_value('[data-meta$=":invoice_no"]') and page.locator('[data-doc] tr[data-row]').count() == 2
+              and page.eval_on_selector('[data-kind]', 'e => e.value') == 'pi')
+        check('PI 预览：匹配到已有客户（公司名）', '已匹配' in page.inner_text('[data-doc]'))
         shot('12_pi_import_preview')
         page.click('[data-apply="0"]')
-        page.wait_for_function("document.body.innerText.includes('导入完成')")
+        page.wait_for_function("document.body.innerText.includes('完成：新建产品')")
         check('PI 导入：成交单、产品、客户阶段', ctx.db.scalar("SELECT status FROM quotes WHERE quote_no='SL-E2E-US'") == 'accepted'
               and ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='CSL-10100'") == 1)
+
+        # xlsx 格式的供应商报价单（带图片）+ 疑似重复必须先决定
+        from test_docimport import supplier_xlsx, IMG_A as _IA
+        sq = os.path.join(tmp, 'supplier_quote.xlsx')
+        existing_name = ctx.db.scalar("SELECT name FROM products WHERE sku='CSL-10100'")
+        open(sq, 'wb').write(supplier_xlsx([('SQ-E2E-1', None, existing_name + ' ', '10W', 8.5, 100), ('SQ-E2E-2', None, 'E2E pendant', '45cm', 20, 50)], images={5: _IA}))
+        page.click('a[data-v=piimport]')
+        page.wait_for_selector('#files')
+        page.set_input_files('#files', sq)
+        page.click('#btnUp')
+        page.wait_for_selector('[data-doc]')
+        check('xlsx 供应商报价单：识别为供应商报价单、币种 CNY、取出 1 张图片', page.eval_on_selector('[data-kind]', 'e => e.value') == 'supplier' and page.eval_on_selector('[data-cur]', 'e => e.value') == 'CNY'
+              and page.locator('[data-doc] tr[data-row] img').count() == 1)
+        check('名称高度相似的产品需要决定：导入按钮禁用并提示', page.is_disabled('[data-apply="0"]') and '没决定' in page.inner_text('[data-status="0"]'))
+        shot('12b_doc_import_dedupe')
+        page.fill('[data-sup="0"]', 'E2E 报价供应商'); page.dispatch_event('[data-sup="0"]', 'change')
+        for _ in range(4):                                                # 每个疑似重复的都要决定：这里全选「跳过」（e2e 里的图片和库里别的产品图相同，可能不止一个）
+            left = page.locator('input[data-dec$=":skip"]:not(:checked)')
+            if not left.count() or '没决定' not in page.inner_text('[data-status="0"]'):
+                break
+            left.first.click(); page.wait_for_timeout(200)
+        try:
+            page.wait_for_function("document.querySelector('[data-apply]') && !document.querySelector('[data-apply]').disabled", timeout=8000)
+        except Exception:
+            print('DEBUG status:', page.inner_text('[data-status="0"]'), '|', page.inner_text('[data-doc]')[:800]); raise
+        page.click('[data-apply="0"]')
+        try:
+            page.wait_for_function("document.body.innerText.includes('完成：新建产品')", timeout=8000)
+        except Exception:
+            print('DEBUG out:', page.inner_text('#out')[-700:], console_errors[-3:], bad_responses[-3:]); raise
+        check('供应商报价单导入：疑似重复的被跳过、建了供应商档案', ctx.db.scalar("SELECT COUNT(*) FROM products WHERE sku='SQ-E2E-1'") == 0
+              and ctx.db.scalar("SELECT COUNT(*) FROM suppliers WHERE name='E2E 报价供应商'") == 1)
 
         # ---------- 备注截图粘贴 / HS 查询按钮 ----------
         print('备注截图 / HS')

@@ -34,6 +34,10 @@ class Request:
         self.params = match.groupdict() if match else {}
         self.headers = handler.headers
         self._body = None
+        try:
+            handler._body_left = int(handler.headers.get('Content-Length') or 0)       # 还没读的请求体字节数（出错时要排空，见 _drain）
+        except ValueError:
+            handler._body_left = 0
 
     def arg(self, name, default=''):
         v = self.query.get(name)
@@ -46,6 +50,7 @@ class Request:
             if n > 25 * 1024 * 1024:
                 raise ApiError('请求体过大', 413)
             raw = self.handler.rfile.read(n) if n else b''
+            self.handler._body_left = 0
             try:
                 self._body = json.loads(raw.decode('utf-8')) if raw else {}
             except (ValueError, UnicodeDecodeError):
@@ -62,6 +67,7 @@ class Request:
         if n > max_bytes:
             raise ApiError('文件太大(%dMB)，超过 %dMB 上限' % (n // 1048576, max_bytes // 1048576), 413)
         data = self.handler.rfile.read(n)
+        self.handler._body_left = max(0, self.handler._body_left - len(data))
         if len(data) != n:
             raise ApiError('上传中断，文件不完整')
         return data
@@ -82,6 +88,7 @@ class Request:
                     break
                 f.write(chunk)
                 remaining -= len(chunk)
+                self.handler._body_left = max(0, self.handler._body_left - len(chunk))
         if remaining:
             os.remove(dest_path)
             raise ApiError('上传中断，文件不完整')
@@ -141,6 +148,25 @@ def make_handler(ctx, router, static_dir):
             self.end_headers()
             self.wfile.write(body)
 
+        def _drain(self, cap=300 * 1024 * 1024):
+            """出错时先把没读完的请求体读掉再回复：否则浏览器还在上传大文件，服务器已经回复并关连接，
+            浏览器就只会报一句看不懂的 "Failed to fetch"，用户看不到真正的错误原因。"""
+            left = getattr(self, '_body_left', 0)
+            if left <= 0:
+                return
+            if left > cap:
+                self.close_connection = True
+                return
+            try:
+                while left > 0:
+                    chunk = self.rfile.read(min(1048576, left))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
+            except OSError:
+                self.close_connection = True
+            self._body_left = 0
+
         def send_json(self, obj, code=200):
             self._send(code, json.dumps(obj, ensure_ascii=False).encode('utf-8'), MIME['json'])
 
@@ -186,11 +212,13 @@ def make_handler(ctx, router, static_dir):
                     return self.send_json({'ok': False, 'error': '不支持的请求方法'}, 405)
                 return self.send_json({'ok': False, 'error': '接口不存在'}, 404)
             except ApiError as e:
+                self._drain()
                 body = {'ok': False, 'error': e.message}
                 body.update(e.extra)
                 return self.send_json(body, e.status)
             except Exception as e:  # 不把堆栈暴露给前端，但打印到黑窗口便于排查
                 traceback.print_exc()
+                self._drain()
                 return self.send_json({'ok': False, 'error': '服务器内部错误: %s' % e}, 500)
 
         def _static(self, path):

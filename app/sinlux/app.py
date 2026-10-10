@@ -17,6 +17,7 @@ from .products.shots import ProductShots
 from .products.rates import RateService, RateScheduler
 from .products.service import ProductService, SupplierService
 from .imports import routes as import_routes
+from .imports.docimport import DocImporter
 from .imports.pi_import import PiImporter
 from .imports.product_import import ProductImporter
 from .suppliers import routes as supplier_routes
@@ -75,6 +76,8 @@ class Context:
         self.importer.cleanup_old()
         self.product_import = ProductImporter(self.db, self.products, self.catalog, self.media, os.path.join(self.import_tmp, 'products'))
         self.pi_import = PiImporter(self.db, self.products, self.quotes, self.customers, self.history, self.catalog, os.path.join(self.import_tmp, 'pi'))
+        self.doc_import = DocImporter(self.db, self.products, self.quotes, self.customers, self.vendors, self.suppliers, self.history, self.catalog,
+                                      self.media, os.path.join(self.import_tmp, 'doc'), self.uploads_dir)
         self.enricher = Enricher(self.db, self.customers, net)
         self.dashboard = Dashboard(self.db, self.rates)
         self.version = read_version()

@@ -32,7 +32,7 @@ export async function render(root, _arg, isCurrent) {
       <select id="fSort" style="max-width:150px">${[['updated', '最近更新'], ['created', '最新创建'], ['sku', 'SKU'], ['name', '名称'], ['cost', '成本从低到高']].map(([k, l]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <div class="seg" id="viewSeg"><button data-v="table" class="${view === 'table' ? 'on' : ''}" title="列表">☰</button><button data-v="cards" class="${view === 'cards' ? 'on' : ''}" title="卡片">▦</button></div>
       <span class="muted" id="cnt"></span></div></div>
-    <div id="toolsMenu" class="menu" style="display:none"><button data-tool="recalc">按最新汇率重算建议价</button><button data-tool="normalize">统一旧图片规格（居中白底高清）</button></div>
+    <div id="toolsMenu" class="menu" style="display:none"><button data-tool="dups">查找疑似重复产品（名称/图片/SKU）</button><button data-tool="recalc">按最新汇率重算建议价</button><button data-tool="normalize">统一旧图片规格（居中白底高清）</button></div>
     <div class="sel-bar" id="selBar"><b id="selN"></b><button id="btnMerge" class="primary">合并同类项…</button><button id="btnClear">取消勾选</button>
       <span class="muted">把重复的产品合成一个：价格历史、成交明细、供应商比价、图片都会并入保留的那一个</span></div>
     <div id="listBox" class="card">加载中…</div>`;
@@ -117,6 +117,7 @@ export async function render(root, _arg, isCurrent) {
     if (!b) return;
     $('#toolsMenu').style.display = 'none';
     try {
+      if (b.dataset.tool === 'dups') return duplicatesDialog(() => load());
       if (b.dataset.tool === 'recalc') {
         if (!confirm('按当前汇率重算所有产品的建议价？\n（已有成交价记录的产品不会改动）')) return;
         const r = await api('/api/products/recalc_prices', 'POST', {});
@@ -178,4 +179,35 @@ async function rateDialog(done) {
   };
   $('#saveBoc').onclick = act(() => api('/api/rate', 'PUT', {boc_buy: $('#bocBuy').value}), '已保存');
   $('#saveRt').onclick = act(() => api('/api/rate', 'PUT', {rate: $('#rt').value}), '汇率已保存');
+}
+
+const REASON = {sku_near: 'SKU 近似', name_high: '名称高度相似', image_high: '图片高度相似'};
+// 全库查重：只列出「疑似」的分组，是否合并由你逐组决定（合并 = 价格历史、成交明细、供应商报价、图片都并入保留的那一个）
+async function duplicatesDialog(onDone) {
+  modal('<h2>查找疑似重复产品</h2><p class="muted">正在按名称、图片、SKU 比对全部产品…</p>', true);
+  let r;
+  try { r = await api('/api/products/duplicates'); } catch (e) { modal(`<h2>查找失败</h2><p class="err">${esc(e.message)}</p><button id="dx">关闭</button>`); $('#dx').onclick = closeModal; return; }
+  const draw = groups => {
+    modal(`<div class="flex between"><h2 style="margin:0">疑似重复产品（${groups.length} 组 / 共 ${r.total_products} 个产品）</h2><button id="dx">关闭</button></div>
+      <p class="muted" style="margin:6px 0 12px">每组选一个<b>保留</b>的产品，其余并入它；觉得不是重复的，不用管它（或点「不是重复」暂时隐藏）。这只是系统的猜测，请对照图片和名称确认。</p>
+      ${groups.length ? groups.map((g, gi) => `<div class="card" style="box-shadow:none;border:1px solid var(--line);margin:0 0 10px" data-g="${gi}">
+        <div class="muted" style="margin-bottom:6px">${g.reasons.map(x => REASON[x] || x).join('、')}</div>
+        <div class="flex" style="align-items:flex-start;gap:14px">${g.members.map((m, mi) => `<label style="display:flex;flex-direction:column;align-items:center;gap:4px;width:150px;cursor:pointer;text-align:center">
+          ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" style="width:110px;height:110px;object-fit:contain;border-radius:8px;background:#fff;border:1px solid var(--line)">` : '<span class="thumb ph" style="width:110px;height:110px">▣</span>'}
+          <span><input type="radio" name="keep${gi}" value="${m.id}" ${mi === 0 ? 'checked' : ''}> 保留</span><b>${esc(m.sku)}</b><span class="muted" style="font-size:12px">${esc(m.name)}</span></label>`).join('')}</div>
+        <div class="flex" style="margin-top:8px"><button class="small primary" data-merge="${gi}">合并这一组</button><button class="small" data-hide="${gi}">不是重复</button></div></div>`).join('')
+        : '<div class="empty">没有发现疑似重复的产品 👍</div>'}`, true);
+    $('#dx').onclick = () => { closeModal(); onDone(); };
+    $('#modalBody').onclick = async e => {
+      const b = e.target.closest('[data-merge],[data-hide]');
+      if (!b) return;
+      if (b.dataset.hide !== undefined) { groups = groups.filter((_, i) => i !== +b.dataset.hide); return draw(groups); }
+      const gi = +b.dataset.merge, g = groups[gi];
+      const keep = +$(`input[name="keep${gi}"]:checked`).value;
+      const ids = g.members.map(m => m.id).filter(id => id !== keep);
+      if (!confirm(`把其余 ${ids.length} 个产品并入「${g.members.find(m => m.id === keep).sku}」？\n价格历史、成交明细、供应商报价、图片会并入保留的产品，被并入的产品会被删除。`)) return;
+      try { await api('/api/products/merge', 'POST', {survivor_id: keep, merge_ids: ids}); toast('已合并'); groups = groups.filter((_, i) => i !== gi); draw(groups); } catch (err) { toast(err.message); }
+    };
+  };
+  draw(r.groups);
 }

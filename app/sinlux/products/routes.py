@@ -79,6 +79,17 @@ def register(r):
     def delete_sub(ctx, req):
         return {'ok': True, **ctx.catalog.delete_subcategory(_id(req), req.json().get('name'))}
 
+    @r.get('/api/products/duplicates')
+    def duplicates(ctx, req):
+        """全库查找疑似重复的产品（名称/图片/SKU 相似）。只读，合并由用户在界面里逐组确认后调用 /api/products/merge。"""
+        from ..imports import dedupe
+        rows = ctx.db.query("""SELECT p.id, p.sku, p.name, (SELECT COALESCE(NULLIF(i.thumb,''), i.file) FROM product_images i WHERE i.product_id=p.id
+            ORDER BY i.sort_order, i.id LIMIT 1) AS img FROM products p""")
+        for r in rows:
+            r['image_path'] = os.path.join(ctx.uploads_dir, r['img']) if r['img'] else None
+            r['thumb_url'] = '/uploads/' + r['img'] if r['img'] else ''
+        return {'groups': dedupe.scan_library(rows), 'total_products': len(rows)}
+
     @r.get('/api/hs_codes')
     def hs_codes(ctx, req):
         """本库里已经用过的 HS 编码（按使用次数排序，带几个示例产品）：同类产品直接复用，不用再查。"""

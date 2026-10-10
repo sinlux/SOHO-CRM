@@ -5,6 +5,7 @@ import os
 from ..core.http import FileResponse
 from ..core.util import ApiError
 from .pi_import import MAX_PI_UPLOAD
+from .docimport import MAX_UPLOAD as DOC_MAX_UPLOAD
 from .product_import import MAX_UPLOAD
 
 
@@ -80,3 +81,35 @@ def register(r):
         q = req.arg('q').strip()
         rows, _ = ctx.customers.list(q, '', '', '', 20, 0)
         return {'customers': [{'id': c['id'], 'company': c['company'], 'name': c['name'], 'emails': c['emails']} for c in rows]}
+
+    # ---------- 文档导入（PI / 供应商报价单 / 产品清单；xls、xlsx） ----------
+    D = '/api/import/doc'
+
+    @r.post(D + '/upload')
+    def doc_upload(ctx, req):
+        name = req.upload_filename('doc.xlsx')
+        sid, path = ctx.doc_import.new_path(name)
+        try:
+            req.save_upload(path, DOC_MAX_UPLOAD)
+            return ctx.doc_import.start(sid)
+        except Exception:
+            ctx.doc_import.discard(sid)
+            raise
+
+    @r.post(D + '/{sid}/reparse')
+    def doc_reparse(ctx, req):
+        b = req.json()
+        return ctx.doc_import.analyze(req.params['sid'], b.get('sheet') or None, b.get('header_row'), b.get('columns') or None, b.get('kind'), b.get('currency'))
+
+    @r.get(D + '/{sid}/image/{name}')
+    def doc_image(ctx, req):
+        return FileResponse(ctx.doc_import.image_path(req.params['sid'], req.params['name']))
+
+    @r.post(D + '/{sid}/apply')
+    def doc_apply(ctx, req):
+        return {'ok': True, **ctx.doc_import.apply(req.params['sid'], req.json())}
+
+    @r.delete(D + '/{sid}')
+    def doc_cancel(ctx, req):
+        ctx.doc_import.discard(req.params['sid'])
+        return {'ok': True}
